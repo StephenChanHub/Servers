@@ -1,42 +1,102 @@
 <template>
-  <div class="dashboard">
+ <div class="dashboard">
+    <div class="top-header">
+      <button v-if="!isLoggedIn" class="login-btn" @click="showLogin = true">log in</button>
+      <div v-else class="user-info">
+        <span>welcome, stephen</span>
+        <button class="logout-link" @click="isLoggedIn = false">logout</button>
+      </div>
+    </div>
+
     <div class="view-container">
       <router-view v-slot="{ Component }">
         <transition :name="transitionName">
-          <component :is="Component" class="page-wrapper" />
+          <component :is="Component" class="page-wrapper" :isLoggedIn="isLoggedIn" />
         </transition>
       </router-view>
     </div>
 
     <nav class="floating-nav">
       <div class="nav-slider" :class="{ 'at-space': route.path === '/space' }"></div>
-      
       <router-link to="/servers" class="nav-btn">servers</router-link>
       <router-link to="/space" class="nav-btn">space</router-link>
     </nav>
+
+    <LoginModal 
+      v-if="showLogin" 
+      @close="showLogin = false" 
+      @login-success="handleLoginSuccess"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import LoginModal from './components/LoginModal.vue';
 
 const route = useRoute();
 const transitionName = ref('slide-down');
+const showLogin = ref(false);
+const isLoggedIn = ref(false); // 全局登录状态
 
-// 监听路由变化，决定页面切换方向
+const handleLoginSuccess = () => {
+  isLoggedIn.value = true;
+  showLogin.value = false;
+};
+
 watch(() => route.path, (to) => {
   if (to === '/space') {
-    // 切换到 space：servers 向下离场，space 从上方入场
     transitionName.value = 'slide-down';
   } else if (to === '/servers') {
-    // 切换回 servers：space 向上离场，servers 从下方入场
     transitionName.value = 'slide-up';
   }
 });
 </script>
 
 <style>
+/* --- 登录模块样式 --- */
+.top-header {
+  position: absolute;
+  top: 30px;
+  right: 40px;
+  z-index: 1100;
+}
+
+.login-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 8px 20px;
+  border-radius: 15px;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.login-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.user-info {
+  color: white;
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.logout-link {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 0.7rem;
+  text-decoration: underline;
+}
+
 /* --- 基础布局容器 --- */
 .dashboard {
   width: 100vw;

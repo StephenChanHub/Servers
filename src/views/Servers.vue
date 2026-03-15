@@ -1,16 +1,20 @@
 <template>
-  <div class="servers-page">
+ <div class="servers-page">
     <header class="page-header">
       <h1>Servers</h1>
     </header>
 
-    <div class="cards-grid">
+    <div class="cards-grid" v-if="isLoggedIn">
       <ServerCard v-for="s in serverList" :key="s.id" :server="s" />
       
       <div class="add-card">
         <span class="plus-icon">+</span>
         <span>Add Node</span>
       </div>
+    </div>
+    
+    <div v-else class="empty-state">
+      <p>Please log in to manage your nodes.</p>
     </div>
   </div>
 </template>
@@ -19,7 +23,11 @@
 import { ref } from 'vue';
 import ServerCard from '../components/ServerCard.vue';
 
-// 模拟数据：包含了你的 Mac Mini M4
+// 接收来自 App.vue 的状态
+defineProps({
+  isLoggedIn: Boolean
+});
+
 const serverList = ref([
   {
     id: 1,
@@ -34,6 +42,17 @@ const serverList = ref([
 </script>
 
 <style scoped>
+
+.empty-state {
+  height: 400px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #444;
+  font-size: 1.2rem;
+  border: 1px dashed rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+}
 
 .servers-page {
   padding: 60px 40px;
