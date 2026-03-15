@@ -109,8 +109,8 @@ watch(() => route.path, (to) => {
   bottom: 30px;
   left: 50%;
   transform: translateX(-50%);
-  width: 260px;
-  height: 54px;
+  width: 50%;
+  height: 60px;
   display: flex;
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(12px);
