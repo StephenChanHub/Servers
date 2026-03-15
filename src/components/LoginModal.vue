@@ -4,11 +4,13 @@
       <h2 class="login-title">LOGIN</h2>
       <div class="input-group">
         <label>USERNAME</label>
-        <input v-model="form.user" type="text" placeholder="Enter username" />
+        <input v-model="form.user" type="text" placeholder="Enter username"
+        @keyup.enter="handleLogin" />
       </div>
       <div class="input-group">
         <label>PASSWORD</label>
-        <input v-model="form.password" type="password" placeholder="••••••" />
+        <input v-model="form.password" type="password" placeholder="Enter password"
+        @keyup.enter="handleLogin" />
       </div>
       <div v-if="error" class="error-msg">Username or password error.</div>
       <div class="button-group">
@@ -42,6 +44,7 @@ const handleLogin = () => {
 </script>
 
 <style scoped>
+
 .login-overlay {
   position: fixed;
   top: 0;
