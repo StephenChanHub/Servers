@@ -33,30 +33,12 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue';
+import { reactive } from 'vue';
 import NodeModal from '../components/NodeModal.vue';
 import ServerCard from '../components/ServerCard.vue';
+import { addServer, removeServer, serverList, updateServer } from '../stores/serverUniverse';
 
 defineProps({ isLoggedIn: Boolean });
-
-const serverList = ref([
-  {
-    id: 1,
-    name: 'Mac Mini M4',
-    ip: '192.168.1.102',
-    status: 'online',
-    metrics: { cpu: 24, ram: 62, disk: 45 },
-    uptime: '12d 4h',
-    activePorts: 3,
-    portStatuses: [
-      { port: '22', status: 'up', message: 'reachable' },
-      { port: '80', status: 'degraded', message: 'connection timeout' },
-      { port: '5432', status: 'down', message: 'connect ECONNREFUSED' }
-    ],
-    ports: '22,80,5432',
-    remark: 'Local Powerhouse'
-  }
-]);
 
 const nodeModal = reactive({
   show: false,
@@ -72,64 +54,43 @@ const openNodeModal = (mode, data = {}) => {
 
 const handleNodeSubmit = (formData) => {
   if (nodeModal.mode === 'add') {
-    serverList.value.push({
-      ...formData,
-      id: Date.now(),
-      status: formData.status || 'online',
-      metrics: { cpu: 0, ram: 0, disk: 0 },
-      uptime: '0m',
-      activePorts: formData.ports?.split(',').map((p) => p.trim()).filter(Boolean).length || 0,
-      portStatuses: formData.portStatuses || []
-    });
+    addServer(formData);
   } else {
-    const idx = serverList.value.findIndex((s) => s.id === nodeModal.data.id);
-    if (idx !== -1) {
-      serverList.value[idx] = {
-        ...serverList.value[idx],
-        ...formData,
-        portStatuses: formData.portStatuses || serverList.value[idx].portStatuses
-      };
-      nodeModal.data = serverList.value[idx];
-    }
+    const updated = updateServer(nodeModal.data.id, {
+      ...formData,
+      portStatuses: formData.portStatuses || nodeModal.data.portStatuses
+    });
+    if (updated) nodeModal.data = updated;
   }
   nodeModal.show = false;
 };
 
 const handleNodeDelete = () => {
-  serverList.value = serverList.value.filter((s) => s.id !== nodeModal.data.id);
+  removeServer(nodeModal.data.id);
   nodeModal.show = false;
 };
 
 const handleSshSuccess = ({ id, metrics, uptime }) => {
   if (!id || !metrics) return;
-
-  const idx = serverList.value.findIndex((s) => s.id === id);
-  if (idx === -1) return;
-
-  serverList.value[idx] = {
-    ...serverList.value[idx],
+  const updated = updateServer(id, {
     status: 'online',
     metrics: {
       cpu: metrics.cpu,
       ram: metrics.ram,
       disk: metrics.disk
     },
-    uptime: uptime || serverList.value[idx].uptime
-  };
-  nodeModal.data = serverList.value[idx];
+    uptime
+  });
+  if (updated) nodeModal.data = updated;
 };
 
 const handleRefreshStatus = ({ id, status, portStatuses }) => {
   if (!id) return;
-  const idx = serverList.value.findIndex((s) => s.id === id);
-  if (idx === -1) return;
-
-  serverList.value[idx] = {
-    ...serverList.value[idx],
-    status: status || serverList.value[idx].status,
-    portStatuses: portStatuses || serverList.value[idx].portStatuses
-  };
-  nodeModal.data = serverList.value[idx];
+  const updated = updateServer(id, {
+    status: status || undefined,
+    portStatuses: portStatuses || undefined
+  });
+  if (updated) nodeModal.data = updated;
 };
 </script>
 
