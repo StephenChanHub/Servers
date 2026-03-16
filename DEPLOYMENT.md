@@ -44,6 +44,7 @@ Vite proxies `/backend-api/*` to backend API.
 ## API Design (optimized)
 
 - `POST /backend-api/auth/login`
+- `POST /backend-api/auth/signup`
 - `GET /backend-api/nodes`
 - `POST /backend-api/nodes`
 - `PUT /backend-api/nodes/:id`
@@ -68,3 +69,10 @@ Vite proxies `/backend-api/*` to backend API.
 4. **Observability**
    - Structured logs with request-id.
    - Add `/metrics` endpoint and basic health checks.
+
+
+## Input constraints
+
+- username <= 10 chars
+- password <= 10 chars
+- node name <= 10 chars

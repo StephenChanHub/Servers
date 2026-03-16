@@ -51,7 +51,7 @@
         <div class="form-layout">
           <div class="input-group">
             <label>NAME</label>
-            <input v-model="form.name" placeholder="Server Name" />
+            <input v-model="form.name" maxlength="10" placeholder="Server Name" />
           </div>
           <div class="input-group">
             <label>IP ADDRESS</label>
@@ -297,6 +297,14 @@ const validateAndSubmit = async () => {
   if (!form.ip) {
     errors.ip = true;
     ipErrorMsg.value = 'IP is required';
+    return;
+  }
+
+  if (form.name && form.name.length > 10) {
+    errors.ip = false;
+    connectivityResult.success = false;
+    connectivityResult.message = 'Node name must be <= 10 characters';
+    connectivityResult.details = [];
     return;
   }
 

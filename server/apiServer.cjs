@@ -5,6 +5,8 @@ const mysql = require('mysql2/promise');
 require('dotenv').config();
 
 const PORT = Number(process.env.API_PORT || 3001);
+const MAX_CREDENTIAL_LENGTH = 10;
+const MAX_NODE_NAME_LENGTH = 10;
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
@@ -33,6 +35,26 @@ const send = (res, status, payload) => {
 };
 
 const hashPassword = (password) => crypto.createHash('sha256').update(password).digest('hex');
+
+const validateCredentials = (username, password) => {
+  if (!username || !password) {
+    return 'username/password required';
+  }
+  if (username.length > MAX_CREDENTIAL_LENGTH || password.length > MAX_CREDENTIAL_LENGTH) {
+    return `username/password must be <= ${MAX_CREDENTIAL_LENGTH} characters`;
+  }
+  return null;
+};
+
+const validateNodePayload = (name, ip) => {
+  if (!name || !ip) {
+    return 'name and ip are required';
+  }
+  if (name.length > MAX_NODE_NAME_LENGTH) {
+    return `node name must be <= ${MAX_NODE_NAME_LENGTH} characters`;
+  }
+  return null;
+};
 
 const mapNodeRow = (row) => ({
   id: row.id,
@@ -68,9 +90,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/backend-api/auth/login' && req.method === 'POST') {
-      const { username, password } = await parseJsonBody(req);
-      if (!username || !password) {
-        send(res, 400, { success: false, message: 'username/password required' });
+      const { username = '', password = '' } = await parseJsonBody(req);
+      const errorMessage = validateCredentials(username.trim(), password.trim());
+      if (errorMessage) {
+        send(res, 400, { success: false, message: errorMessage });
         return;
       }
 
@@ -87,6 +110,30 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === '/backend-api/auth/signup' && req.method === 'POST') {
+      const { username = '', password = '' } = await parseJsonBody(req);
+      const cleanUsername = username.trim();
+      const cleanPassword = password.trim();
+      const errorMessage = validateCredentials(cleanUsername, cleanPassword);
+      if (errorMessage) {
+        send(res, 400, { success: false, message: errorMessage });
+        return;
+      }
+
+      const [existsRows] = await pool.query('SELECT id FROM accounts WHERE username = ? LIMIT 1', [cleanUsername]);
+      if (existsRows.length) {
+        send(res, 409, { success: false, message: 'username already exists' });
+        return;
+      }
+
+      const [result] = await pool.query('INSERT INTO accounts (username, password_hash) VALUES (?, ?)', [cleanUsername, hashPassword(cleanPassword)]);
+      send(res, 200, {
+        success: true,
+        user: { id: result.insertId, username: cleanUsername }
+      });
+      return;
+    }
+
     if (url.pathname === '/backend-api/nodes' && req.method === 'GET') {
       const [rows] = await pool.query('SELECT * FROM nodes ORDER BY id DESC');
       send(res, 200, { success: true, data: rows.map(mapNodeRow) });
@@ -97,8 +144,9 @@ const server = http.createServer(async (req, res) => {
       const body = await parseJsonBody(req);
       const { name, ip, ports, remark, sshPassword, status = 'online', metrics = {}, uptime = '0m', portStatuses = [] } = body;
 
-      if (!name || !ip) {
-        send(res, 400, { success: false, message: 'name and ip are required' });
+      const errorMessage = validateNodePayload(name, ip);
+      if (errorMessage) {
+        send(res, 400, { success: false, message: errorMessage });
         return;
       }
 
@@ -141,6 +189,12 @@ const server = http.createServer(async (req, res) => {
         ...body,
         metrics: { ...current.metrics, ...(body.metrics || {}) }
       };
+
+      const errorMessage = validateNodePayload(merged.name, merged.ip);
+      if (errorMessage) {
+        send(res, 400, { success: false, message: errorMessage });
+        return;
+      }
 
       await pool.query(
         `UPDATE nodes

@@ -24,6 +24,12 @@ export const loginApi = ({ username, password }) =>
     body: JSON.stringify({ username, password })
   });
 
+export const signUpApi = ({ username, password }) =>
+  request('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ username, password })
+  });
+
 export const fetchNodesApi = () => request('/nodes');
 
 export const createNodeApi = (node) =>

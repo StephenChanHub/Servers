@@ -4,16 +4,29 @@
       <h2 class="login-title">LOGIN</h2>
       <div class="input-group">
         <label>USERNAME</label>
-        <input v-model="form.user" type="text" placeholder="Enter username" @keyup.enter="handleLogin" />
+        <input
+          v-model="form.user"
+          type="text"
+          maxlength="10"
+          placeholder="Enter username"
+          @keyup.enter="handleSignIn"
+        />
       </div>
       <div class="input-group">
         <label>PASSWORD</label>
-        <input v-model="form.password" type="password" placeholder="Enter password" @keyup.enter="handleLogin" />
+        <input
+          v-model="form.password"
+          type="password"
+          maxlength="10"
+          placeholder="Enter password"
+          @keyup.enter="handleSignIn"
+        />
       </div>
+      <div class="helper-msg">Username / Password max length: 10</div>
       <div v-if="error" class="error-msg">{{ error }}</div>
       <div class="button-group">
-        <button class="btn btn-cancel" @click="$emit('close')">cancel</button>
-        <button class="btn btn-confirm" :disabled="loading" @click="handleLogin">{{ loading ? 'loading...' : 'confirm' }}</button>
+        <button class="btn btn-cancel" :disabled="loading" @click="handleSignIn">{{ loading ? 'loading...' : 'sign in' }}</button>
+        <button class="btn btn-confirm" :disabled="loading" @click="handleSignUp">{{ loading ? 'loading...' : 'sign up' }}</button>
       </div>
     </div>
   </div>
@@ -21,7 +34,7 @@
 
 <script setup>
 import { reactive, ref } from 'vue';
-import { loginApi } from '../services/backendApi';
+import { loginApi, signUpApi } from '../services/backendApi';
 
 const emit = defineEmits(['close', 'login-success']);
 const error = ref('');
@@ -32,14 +45,50 @@ const form = reactive({
   password: ''
 });
 
-const handleLogin = async () => {
+const validateInput = () => {
+  const username = form.user.trim();
+  const password = form.password.trim();
+
+  if (!username || !password) {
+    error.value = 'Username and password are required.';
+    return null;
+  }
+
+  if (username.length > 10 || password.length > 10) {
+    error.value = 'Username and password must be <= 10 characters.';
+    return null;
+  }
+
+  return { username, password };
+};
+
+const handleSignIn = async () => {
+  const payload = validateInput();
+  if (!payload) return;
+
   loading.value = true;
   error.value = '';
   try {
-    const result = await loginApi({ username: form.user, password: form.password });
+    const result = await loginApi(payload);
     emit('login-success', result.user);
   } catch (e) {
-    error.value = e.message || 'Username or password error.';
+    error.value = e.message || 'Sign in failed.';
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleSignUp = async () => {
+  const payload = validateInput();
+  if (!payload) return;
+
+  loading.value = true;
+  error.value = '';
+  try {
+    const result = await signUpApi(payload);
+    emit('login-success', result.user);
+  } catch (e) {
+    error.value = e.message || 'Sign up failed.';
   } finally {
     loading.value = false;
   }
@@ -102,6 +151,13 @@ const handleLogin = async () => {
 
 .input-group input:focus {
   border-color: rgba(255, 255, 255, 0.4);
+}
+
+.helper-msg {
+  color: #888;
+  font-size: 0.68rem;
+  text-align: center;
+  margin: -5px 0 10px;
 }
 
 .error-msg {
