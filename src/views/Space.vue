@@ -19,11 +19,11 @@
           <line
             v-for="port in galaxy.ports"
             :key="`link-${galaxy.id}-${port.port}`"
-            x1="130"
-            y1="130"
+            :x1="centerPoint(galaxy.id).x"
+            :y1="centerPoint(galaxy.id).y"
             :x2="port.x"
             :y2="port.y"
-            :stroke="statusColor(port.status)"
+            stroke="#ffffff"
           />
         </svg>
 
@@ -49,12 +49,13 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { serverList } from '../stores/serverUniverse';
 
 defineProps({ isLoggedIn: Boolean });
 
 const hoverStates = reactive({});
+const backgroundStars = ref([]);
 
 const statusColor = (status) => {
   if (status === 'up' || status === 'online') return '#2ed573';
@@ -62,6 +63,11 @@ const statusColor = (status) => {
   if (status === 'down' || status === 'offline') return '#ff4757';
   return '#9ba3ad';
 };
+
+const centerPoint = (galaxyId) => ({
+  x: 130 + (hoverStates[galaxyId]?.x || 0),
+  y: 130 + (hoverStates[galaxyId]?.y || 0)
+});
 
 const coreStyle = (status, galaxyId) => {
   const color = statusColor(status);
@@ -72,18 +78,23 @@ const coreStyle = (status, galaxyId) => {
   };
 };
 
-const backgroundStars = computed(() =>
-  Array.from({ length: 120 }, (_, i) => ({
-    id: i,
-    style: {
-      left: `${(i * 37) % 100}%`,
-      top: `${(i * 53) % 100}%`,
-      width: `${1 + (i % 3)}px`,
-      height: `${1 + (i % 3)}px`,
-      animationDelay: `${(i % 6) * 0.5}s`
-    }
-  }))
-);
+const generateBackgroundStars = () => {
+  const total = 140;
+  backgroundStars.value = Array.from({ length: total }, (_, i) => {
+    const size = 1 + Math.random() * 2.2;
+    return {
+      id: i,
+      style: {
+        left: `${Math.random() * 100}%`,
+        top: `${Math.random() * 100}%`,
+        width: `${size}px`,
+        height: `${size}px`,
+        opacity: `${0.25 + Math.random() * 0.65}`,
+        animationDelay: `${Math.random() * 3.5}s`
+      }
+    };
+  });
+};
 
 const toPorts = (server) => {
   const fromStatuses = server.portStatuses?.length
@@ -127,6 +138,10 @@ const onGalaxyHover = (event, galaxyId) => {
 const onGalaxyLeave = (galaxyId) => {
   hoverStates[galaxyId] = { x: 0, y: 0 };
 };
+
+onMounted(() => {
+  generateBackgroundStars();
+});
 </script>
 
 <style scoped>
@@ -141,7 +156,7 @@ const onGalaxyLeave = (galaxyId) => {
 .bg-star {
   position: absolute;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.95);
   animation: twinkle 4s infinite ease-in-out;
 }
 
@@ -176,7 +191,7 @@ const onGalaxyLeave = (galaxyId) => {
 
 .orbit-links line {
   stroke-width: 1.4;
-  opacity: 0.55;
+  opacity: 0.68;
 }
 
 .port-star {
@@ -222,7 +237,12 @@ const onGalaxyLeave = (galaxyId) => {
 }
 
 @keyframes twinkle {
-  0%, 100% { opacity: 0.25; }
-  50% { opacity: 0.95; }
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.95;
+  }
 }
 </style>
