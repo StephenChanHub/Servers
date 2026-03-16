@@ -2,9 +2,6 @@
   <div class="modal-overlay" @click.self="handleOverlayClick">
     <div class="node-container glass-card">
       <div v-if="view !== 'ssh' && view !== 'confirm_delete'" class="top-right-action">
-        <button class="refresh-btn-trigger" :disabled="refreshing" @click="refreshNodeStatus">
-          {{ refreshing ? 'Refreshing...' : 'Refresh' }}
-        </button>
         <button class="ssh-btn-trigger" @click="enterSSHView">
           <span class="icon"></span> SSH
         </button>
@@ -107,9 +104,6 @@
         <div class="port-section">
           <label>MONITORED PORTS</label>
           <ul class="port-status-list">
-            <li v-for="portItem in mergedPortStatuses" :key="portItem.port">
-              <span class="breath-dot" :class="dotClass(portItem.status)"></span>
-              {{ portItem.port }}
             <li v-for="port in portList" :key="port">
               <span class="breath-dot" :class="{ active: isConnected }"></span>
               {{ port }}
@@ -142,18 +136,15 @@ const props = defineProps({
   existingIps: Array
 });
 
-const emit = defineEmits(['close', 'submit', 'delete', 'ssh-success', 'refresh-status']);
 const emit = defineEmits(['close', 'submit', 'delete', 'ssh-success']);
 
 const view = ref(props.mode === 'add' ? 'form' : 'detail');
 const isEditing = ref(false);
-const refreshing = ref(false);
 const sshPassword = ref('');
 const errors = reactive({ ip: false });
 const ipErrorMsg = ref('IP is required');
 const connectivityResult = reactive({ loading: false, success: false, message: '', details: [] });
 const sshResult = reactive({ loading: false, success: false, message: '', metrics: null });
-const livePortStatuses = ref([]);
 
 const form = reactive({
   name: props.initialData?.name || '',
@@ -163,19 +154,6 @@ const form = reactive({
 });
 
 const portList = computed(() => (form.ports ? form.ports.split(',').map((p) => p.trim()).filter(Boolean) : []));
-const mergedPortStatuses = computed(() => {
-  if (livePortStatuses.value.length) return livePortStatuses.value;
-  if (props.initialData?.portStatuses?.length) return props.initialData.portStatuses;
-  return portList.value.map((port) => ({ port, status: 'unknown', message: 'not checked' }));
-});
-
-const dotClass = (status) => {
-  if (status === 'up') return 'active-up';
-  if (status === 'degraded') return 'active-degraded';
-  if (status === 'down') return 'active-down';
-  return 'inactive';
-};
-
 
 const enterSSHView = () => {
   if (!form.ip.trim()) {
@@ -187,43 +165,6 @@ const enterSSHView = () => {
   sshResult.message = '';
   sshResult.metrics = null;
   view.value = 'ssh';
-};
-
-const applyConnectivityResult = (result) => {
-  const portStatuses = (result.tcpChecks || []).map((check) => ({
-    port: String(check.port),
-    status: check.status || (check.success ? 'up' : 'down'),
-    message: check.message
-  }));
-
-  connectivityResult.success = !!result.success;
-  connectivityResult.message = result.message;
-  connectivityResult.details = [
-    `Ping: ${result.ping?.message || 'N/A'}`,
-    ...(result.tcpChecks || []).map((check) => `TCP ${check.port}: ${check.message}`)
-  ];
-
-  livePortStatuses.value = portStatuses;
-  return portStatuses;
-};
-
-const refreshNodeStatus = async () => {
-  if (!form.ip) return;
-  refreshing.value = true;
-  try {
-    const result = await validateNodeConnection({ ip: form.ip, ports: portList.value });
-    const portStatuses = applyConnectivityResult(result);
-    emit('refresh-status', {
-      id: props.initialData?.id,
-      status: result.success ? 'online' : result.ping?.status === 'degraded' ? 'warning' : 'offline',
-      portStatuses
-    });
-  } catch (error) {
-    connectivityResult.success = false;
-    connectivityResult.message = error.message;
-  } finally {
-    refreshing.value = false;
-  }
 };
 
 const handleSSHConnect = async () => {
@@ -267,7 +208,9 @@ const handleCancelAction = () => {
 };
 
 const handleOverlayClick = () => {
-  if (!isEditing.value && view.value !== 'ssh' && view.value !== 'confirm_delete') emit('close');
+  if (!isEditing.value && view.value !== 'ssh' && view.value !== 'confirm_delete') {
+    emit('close');
+  }
 };
 
 const validateAndSubmit = async () => {
@@ -291,18 +234,6 @@ const validateAndSubmit = async () => {
   connectivityResult.details = [];
 
   try {
-    const result = await validateNodeConnection({ ip: form.ip, ports: portList.value });
-    const portStatuses = applyConnectivityResult(result);
-    if (!result.success) return;
-
-    emit('submit', { ...form, portStatuses, status: 'online' });
-    isEditing.value = false;
-  } catch (error) {
-    connectivityResult.success = false;
-    connectivityResult.message = error.message;
-  } finally {
-    connectivityResult.loading = false;
-  }
     const parsedPorts = portList.value;
     const result = await validateNodeConnection({ ip: form.ip, ports: parsedPorts });
 
@@ -332,48 +263,6 @@ const getMetricColor = (v) => (v > 80 ? '#ff4757' : v > 50 ? '#ffa502' : '#2ed57
 </script>
 
 <style scoped>
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0.9, 0.9, 0.9, 0.9); -webkit-backdrop-filter: blur(90px); backdrop-filter: blur(90%); display: flex; justify-content: center; align-items: center; z-index: 3000; }
-.glass-card { width: 440px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 28px; padding: 40px; color: white; position: relative; box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6); }
-.top-right-action { position: absolute; top: 30px; right: 30px; z-index: 10; display: flex; gap: 8px; }
-.ssh-btn-trigger, .refresh-btn-trigger { background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 6px 15px; border-radius: 12px; cursor: pointer; font-size: 0.75rem; transition: 0.3s; }
-.ssh-btn-trigger:hover, .refresh-btn-trigger:hover { background: rgba(255, 255, 255, 0.2); }
-.refresh-btn-trigger:disabled { opacity: 0.6; cursor: not-allowed; }
-.remark-display { margin-top: 20px; padding: 12px; background: rgba(255, 255, 255, 0.03); border-radius: 12px; }
-.remark-display label { font-size: 0.65rem; color: #555; display: block; margin-bottom: 5px; }
-.remark-display p { font-size: 0.85rem; color: #ccc; margin: 0; line-height: 1.4; }
-.metric-sub-tip { font-size: 0.65rem; color: #555; margin-top: 4px; font-style: italic; }
-.fade-in { animation: fadeIn 0.3s ease-out; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-.form-layout { display: flex; flex-direction: column; gap: 20px; }
-.input-group label { display: block; font-size: 0.7rem; color: #666; margin-bottom: 8px; }
-.input-group input, .input-group textarea { width: 100%; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 12px; color: white; outline: none; box-sizing: border-box; }
-.error-border { border-color: #ff4757 !important; }
-.error-tip { color: #ff4757; font-size: 0.65rem; margin-top: 5px; display: block; }
-.metrics-container { margin: 30px 0; }
-.metric-item { margin-bottom: 20px; }
-.metric-label { display: flex; justify-content: space-between; font-size: 0.75rem; color: #888; margin-bottom: 8px; }
-.progress-bar { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.05); border-radius: 3px; overflow: hidden; }
-.progress-fill { height: 100%; transition: width 0.8s ease; }
-.port-status-list { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px; }
-.port-status-list li { background: rgba(255, 255, 255, 0.05); padding: 8px 15px; border-radius: 12px; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255, 255, 255, 0.1); }
-.breath-dot { width: 6px; height: 6px; border-radius: 50%; }
-.inactive { background: #4b4b4b; }
-.active-up { background: #2ed573; box-shadow: 0 0 8px #2ed573; animation: blink 2s infinite; }
-.active-degraded { background: #ffa502; box-shadow: 0 0 8px #ffa502; animation: blink 2s infinite; }
-.active-down { background: #ff4757; box-shadow: 0 0 8px #ff4757; animation: blink 2s infinite; }
-@keyframes blink { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-.button-group { display: flex; gap: 15px; margin-top: 40px; }
-.btn { flex: 1; padding: 14px; border-radius: 14px; border: none; cursor: pointer; font-weight: 600; transition: 0.3s; }
-.btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-confirm { background: white; color: black; }
-.btn-cancel { background: rgba(255, 255, 255, 0.08); color: white; }
-.btn-danger { background: #ff4757; color: white; }
-.center { text-align: center; }
-.warning-icon { font-size: 3rem; margin-bottom: 20px; }
-.status-panel { margin-top: 16px; border-radius: 10px; padding: 10px 12px; font-size: 0.78rem; border: 1px solid transparent; }
-.status-success { background: rgba(46, 213, 115, 0.12); border-color: rgba(46, 213, 115, 0.45); color: #9ff3c5; }
-.status-fail { background: rgba(255, 71, 87, 0.12); border-color: rgba(255, 71, 87, 0.45); color: #ffc2c8; }
-.status-list { margin: 8px 0 0; padding-left: 18px; }
 .modal-overlay {
   position: fixed;
   top: 0;

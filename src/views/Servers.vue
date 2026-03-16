@@ -27,7 +27,6 @@
       @submit="handleNodeSubmit"
       @delete="handleNodeDelete"
       @ssh-success="handleSshSuccess"
-      @refresh-status="handleRefreshStatus"
     />
   </div>
 </template>
@@ -47,13 +46,6 @@ const serverList = ref([
     status: 'online',
     metrics: { cpu: 24, ram: 62, disk: 45 },
     uptime: '12d 4h',
-    activePorts: 3,
-    portStatuses: [
-      { port: '22', status: 'up', message: 'reachable' },
-      { port: '80', status: 'degraded', message: 'connection timeout' },
-      { port: '5432', status: 'down', message: 'connect ECONNREFUSED' }
-    ],
-    ports: '22,80,5432',
     activePorts: 8,
     remark: 'Local Powerhouse'
   }
@@ -76,22 +68,14 @@ const handleNodeSubmit = (formData) => {
     serverList.value.push({
       ...formData,
       id: Date.now(),
-      status: formData.status || 'online',
+      status: 'online',
       metrics: { cpu: 0, ram: 0, disk: 0 },
       uptime: '0m',
-      activePorts: formData.ports?.split(',').map((p) => p.trim()).filter(Boolean).length || 0,
-      portStatuses: formData.portStatuses || []
       activePorts: formData.ports?.split(',').map((p) => p.trim()).filter(Boolean).length || 0
     });
   } else {
     const idx = serverList.value.findIndex((s) => s.id === nodeModal.data.id);
     if (idx !== -1) {
-      serverList.value[idx] = {
-        ...serverList.value[idx],
-        ...formData,
-        portStatuses: formData.portStatuses || serverList.value[idx].portStatuses
-      };
-      nodeModal.data = serverList.value[idx];
       serverList.value[idx] = { ...serverList.value[idx], ...formData };
     }
   }
@@ -104,10 +88,6 @@ const handleNodeDelete = () => {
 };
 
 const handleSshSuccess = ({ id, metrics, uptime }) => {
-  if (!id || !metrics) return;
-
-  const idx = serverList.value.findIndex((s) => s.id === id);
-  if (idx === -1) return;
   if (!id || !metrics) {
     return;
   }
@@ -129,28 +109,6 @@ const handleSshSuccess = ({ id, metrics, uptime }) => {
   };
   nodeModal.data = serverList.value[idx];
 };
-
-const handleRefreshStatus = ({ id, status, portStatuses }) => {
-  if (!id) return;
-  const idx = serverList.value.findIndex((s) => s.id === id);
-  if (idx === -1) return;
-
-  serverList.value[idx] = {
-    ...serverList.value[idx],
-    status: status || serverList.value[idx].status,
-    portStatuses: portStatuses || serverList.value[idx].portStatuses
-  };
-  nodeModal.data = serverList.value[idx];
-};
-</script>
-
-<style scoped>
-.servers-page { padding: 60px 40px; width: 100%; box-sizing: border-box; }
-.page-header h1 { font-size: 5rem; font-weight: 300; color: white; margin-bottom: 40px; }
-.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 50px; }
-.add-card { height: 340px; border: 2px dashed rgba(255, 255, 255, 0.1); border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #444; cursor: pointer; transition: 0.3s; }
-.add-card:hover { border-color: rgba(255, 255, 255, 0.3); color: #888; }
-.empty-state { color: #333; text-align: center; margin-top: 100px; }
 </script>
 
 <style scoped>
