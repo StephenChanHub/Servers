@@ -26,6 +26,7 @@
       v-if="nodeModal.show"
       :mode="nodeModal.mode"
       :initialData="nodeModal.data"
+      :existingIps="serverList.map(s => s.ip)"
       @close="nodeModal.show = false"
       @submit="handleNodeSubmit"
       @delete="handleNodeDelete"
@@ -40,9 +41,8 @@ import NodeModal from '../components/NodeModal.vue';
 
 defineProps({ isLoggedIn: Boolean });
 
-// 模拟数据源
 const serverList = ref([
-  { id: 1, name: 'Mac Mini M4', ip: '192.168.1.102', status: 'online', metrics: { cpu: 24, ram: 62, disk: 45 }, uptime: '12d 4h 22m', activePorts: 8, password: '', ports: '80, 443', remark: 'Main workstation' }
+  { id: 1, name: 'Mac Mini M4', ip: '192.168.1.102', status: 'online', metrics: { cpu: 24, ram: 62, disk: 45 }, uptime: '12d 4h', activePorts: 8, remark: 'Local Powerhouse' }
 ]);
 
 const nodeModal = reactive({
@@ -59,20 +59,17 @@ const openNodeModal = (mode, data = {}) => {
 
 const handleNodeSubmit = (formData) => {
   if (nodeModal.mode === 'add') {
-    // 模拟添加
-    const newNode = {
+    serverList.value.push({
       ...formData,
       id: Date.now(),
       status: 'online',
       metrics: { cpu: 0, ram: 0, disk: 0 },
       uptime: '0m',
-      activePorts: formData.ports.split(',').length
-    };
-    serverList.value.push(newNode);
+      activePorts: formData.ports?.split(',').length || 0
+    });
   } else {
-    // 模拟更新
-    const index = serverList.value.findIndex(s => s.id === nodeModal.data.id);
-    if (index !== -1) serverList.value[index] = { ...serverList.value[index], ...formData };
+    const idx = serverList.value.findIndex(s => s.id === nodeModal.data.id);
+    if (idx !== -1) serverList.value[idx] = { ...serverList.value[idx], ...formData };
   }
   nodeModal.show = false;
 };
@@ -84,51 +81,29 @@ const handleNodeDelete = () => {
 </script>
 
 <style scoped>
-
-.empty-state {
-  height: 400px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: #444;
-  font-size: 1.2rem;
-  border: 1px dashed rgba(255, 255, 255, 0.05);
-  border-radius: 20px;
-}
-
 .servers-page {
   padding: 60px 40px;
-  max-width: 1200px;
-  margin: 0 auto;
+  /* 4. 移除 max-width，使其完全适应全屏宽度 */
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.page-header { margin-bottom: 40px; }
-.page-header h1 { font-size: 5rem; margin-bottom: 8px; font-weight: 300;color: white; }
-
+.page-header h1 { font-size: 5rem; font-weight: 300; color: white; margin-bottom: 40px; }
 
 .cards-grid {
   display: grid;
+  /* 4. 使用 auto-fill 根据屏幕宽度自动计算列数 */
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 30px;
+  gap: 50px;
 }
 
-/* “添加”卡片的样式 */
 .add-card {
   height: 340px;
   border: 2px dashed rgba(255, 255, 255, 0.1);
   border-radius: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  color: #444;
-  cursor: pointer;
-  transition: 0.3s;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  color: #444; cursor: pointer; transition: 0.3s;
 }
-.add-card:hover {
-  background: rgba(255, 255, 255, 0.02);
-  color: #888;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-.plus-icon { font-size: 2rem; margin-bottom: 10px; }
+.add-card:hover { border-color: rgba(255, 255, 255, 0.3); color: #888; }
+.empty-state { color: #333; text-align: center; margin-top: 100px; }
 </style>
