@@ -6,6 +6,7 @@ const execFileAsync = promisify(execFile);
 
 const parseBody = async (req) => {
   const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
   for await (const chunk of req) {
     chunks.push(chunk);
   }
@@ -24,6 +25,36 @@ const validatePort = (value) => {
   return Number.isInteger(port) && port >= 1 && port <= 65535;
 };
 
+const classifyNetworkIssue = (message = '') => {
+  const text = message.toLowerCase();
+  if (
+    text.includes('timeout') ||
+    text.includes('unreachable') ||
+    text.includes('no route') ||
+    text.includes('100% packet loss') ||
+    text.includes('temporary failure')
+  ) {
+    return 'degraded';
+  }
+  return 'down';
+};
+
+const runPing = async (ip) => {
+  try {
+    await execFileAsync('ping', ['-c', '1', '-W', '2', ip]);
+    return { success: true, message: 'reachable', status: 'up' };
+  } catch (error) {
+    const message = error?.stderr?.trim() || error?.message || 'ping failed';
+    return {
+      success: false,
+      message,
+      status: classifyNetworkIssue(message)
+    };
+  }
+};
+
+const checkTcpPort = (ip, port) =>
+  new Promise((resolve) => {
 const runPing = async (ip) => {
   try {
     await execFileAsync('ping', ['-c', '1', '-W', '2', ip]);
@@ -50,6 +81,18 @@ const checkTcpPort = (ip, port) => {
 
     socket.setTimeout(2500);
     socket.connect(port, ip, () => {
+      finish({ port, success: true, message: 'reachable', status: 'up' });
+    });
+
+    socket.on('timeout', () => {
+      finish({ port, success: false, message: 'connection timeout', status: 'degraded' });
+    });
+
+    socket.on('error', (err) => {
+      const message = err.message || 'tcp connect failed';
+      finish({ port, success: false, message, status: classifyNetworkIssue(message) });
+    });
+  });
       finish({ port, success: true, message: 'reachable' });
     });
 
@@ -139,6 +182,8 @@ export const networkApiMiddleware = async (req, res, next) => {
 
       const ping = await runPing(ip);
       const tcpChecks = await Promise.all(ports.map((port) => checkTcpPort(ip, Number(port))));
+      const success = ping.success && tcpChecks.every((item) => item.success);
+
 
       const success = ping.success && tcpChecks.every((item) => item.success);
       const failReasons = [
