@@ -110,6 +110,9 @@
             <li v-for="portItem in mergedPortStatuses" :key="portItem.port">
               <span class="breath-dot" :class="dotClass(portItem.status)"></span>
               {{ portItem.port }}
+            <li v-for="port in portList" :key="port">
+              <span class="breath-dot" :class="{ active: isConnected }"></span>
+              {{ port }}
             </li>
           </ul>
         </div>
@@ -140,6 +143,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'submit', 'delete', 'ssh-success', 'refresh-status']);
+const emit = defineEmits(['close', 'submit', 'delete', 'ssh-success']);
 
 const view = ref(props.mode === 'add' ? 'form' : 'detail');
 const isEditing = ref(false);
@@ -171,6 +175,7 @@ const dotClass = (status) => {
   if (status === 'down') return 'active-down';
   return 'inactive';
 };
+
 
 const enterSSHView = () => {
   if (!form.ip.trim()) {
@@ -254,8 +259,11 @@ const exitSSHView = () => {
 };
 
 const handleCancelAction = () => {
-  if (props.mode === 'add') emit('close');
-  else isEditing.value = false;
+  if (props.mode === 'add') {
+    emit('close');
+  } else {
+    isEditing.value = false;
+  }
 };
 
 const handleOverlayClick = () => {
@@ -295,6 +303,29 @@ const validateAndSubmit = async () => {
   } finally {
     connectivityResult.loading = false;
   }
+    const parsedPorts = portList.value;
+    const result = await validateNodeConnection({ ip: form.ip, ports: parsedPorts });
+
+    connectivityResult.success = !!result.success;
+    connectivityResult.message = result.message;
+    connectivityResult.details = [
+      `Ping: ${result.ping?.message || 'N/A'}`,
+      ...(result.tcpChecks || []).map((check) => `TCP ${check.port}: ${check.message}`)
+    ];
+
+    if (!result.success) {
+      return;
+    }
+  } catch (error) {
+    connectivityResult.success = false;
+    connectivityResult.message = error.message;
+    return;
+  } finally {
+    connectivityResult.loading = false;
+  }
+
+  emit('submit', { ...form });
+  isEditing.value = false;
 };
 
 const getMetricColor = (v) => (v > 80 ? '#ff4757' : v > 50 ? '#ffa502' : '#2ed573');
@@ -343,4 +374,272 @@ const getMetricColor = (v) => (v > 80 ? '#ff4757' : v > 50 ? '#ffa502' : '#2ed57
 .status-success { background: rgba(46, 213, 115, 0.12); border-color: rgba(46, 213, 115, 0.45); color: #9ff3c5; }
 .status-fail { background: rgba(255, 71, 87, 0.12); border-color: rgba(255, 71, 87, 0.45); color: #ffc2c8; }
 .status-list { margin: 8px 0 0; padding-left: 18px; }
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0.9, 0.9, 0.9, 0.9);
+  -webkit-backdrop-filter: blur(90px);
+  backdrop-filter: blur(90%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 3000;
+}
+
+.glass-card {
+  width: 440px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  padding: 40px;
+  color: white;
+  position: relative;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+}
+
+.top-right-action {
+  position: absolute;
+  top: 30px;
+  right: 30px;
+  z-index: 10;
+}
+
+.ssh-btn-trigger {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 6px 15px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: 0.3s;
+}
+
+.ssh-btn-trigger:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.remark-display {
+  margin-top: 20px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+}
+
+.remark-display label {
+  font-size: 0.65rem;
+  color: #555;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.remark-display p {
+  font-size: 0.85rem;
+  color: #ccc;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.metric-sub-tip {
+  font-size: 0.65rem;
+  color: #555;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.form-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.input-group label {
+  display: block;
+  font-size: 0.7rem;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.input-group input,
+.input-group textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  color: white;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.error-border {
+  border-color: #ff4757 !important;
+}
+
+.error-tip {
+  color: #ff4757;
+  font-size: 0.65rem;
+  margin-top: 5px;
+  display: block;
+}
+
+.metrics-container {
+  margin: 30px 0;
+}
+
+.metric-item {
+  margin-bottom: 20px;
+}
+
+.metric-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.8s ease;
+}
+
+.port-status-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.port-status-list li {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 15px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.breath-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #333;
+}
+
+.breath-dot.active {
+  background: #2ed573;
+  box-shadow: 0 0 8px #2ed573;
+  animation: blink 2s infinite;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.button-group {
+  display: flex;
+  gap: 15px;
+  margin-top: 40px;
+}
+
+.btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.3s;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-confirm {
+  background: white;
+  color: black;
+}
+
+.btn-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.btn-danger {
+  background: #ff4757;
+  color: white;
+}
+
+.center {
+  text-align: center;
+}
+
+.warning-icon {
+  font-size: 3rem;
+  margin-bottom: 20px;
+}
+
+.status-panel {
+  margin-top: 16px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  border: 1px solid transparent;
+}
+
+.status-success {
+  background: rgba(46, 213, 115, 0.12);
+  border-color: rgba(46, 213, 115, 0.45);
+  color: #9ff3c5;
+}
+
+.status-fail {
+  background: rgba(255, 71, 87, 0.12);
+  border-color: rgba(255, 71, 87, 0.45);
+  color: #ffc2c8;
+}
+
+.status-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
 </style>

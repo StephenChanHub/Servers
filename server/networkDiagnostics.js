@@ -7,6 +7,9 @@ const execFileAsync = promisify(execFile);
 const parseBody = async (req) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf-8'));
 };
@@ -52,6 +55,20 @@ const runPing = async (ip) => {
 
 const checkTcpPort = (ip, port) =>
   new Promise((resolve) => {
+const runPing = async (ip) => {
+  try {
+    await execFileAsync('ping', ['-c', '1', '-W', '2', ip]);
+    return { success: true, message: 'reachable' };
+  } catch (error) {
+    return {
+      success: false,
+      message: error?.stderr?.trim() || error?.message || 'ping failed'
+    };
+  }
+};
+
+const checkTcpPort = (ip, port) => {
+  return new Promise((resolve) => {
     const socket = new net.Socket();
     let done = false;
 
@@ -76,6 +93,18 @@ const checkTcpPort = (ip, port) =>
       finish({ port, success: false, message, status: classifyNetworkIssue(message) });
     });
   });
+      finish({ port, success: true, message: 'reachable' });
+    });
+
+    socket.on('timeout', () => {
+      finish({ port, success: false, message: 'connection timeout' });
+    });
+
+    socket.on('error', (err) => {
+      finish({ port, success: false, message: err.message });
+    });
+  });
+};
 
 const runSshDiagnostics = async (ip, password) => {
   let sshpassAvailable = true;
@@ -155,6 +184,8 @@ export const networkApiMiddleware = async (req, res, next) => {
       const tcpChecks = await Promise.all(ports.map((port) => checkTcpPort(ip, Number(port))));
       const success = ping.success && tcpChecks.every((item) => item.success);
 
+
+      const success = ping.success && tcpChecks.every((item) => item.success);
       const failReasons = [
         !ping.success ? `Ping failed: ${ping.message}` : null,
         ...tcpChecks.filter((item) => !item.success).map((item) => `TCP ${item.port} failed: ${item.message}`)
