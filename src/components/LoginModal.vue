@@ -4,18 +4,16 @@
       <h2 class="login-title">LOGIN</h2>
       <div class="input-group">
         <label>USERNAME</label>
-        <input v-model="form.user" type="text" placeholder="Enter username"
-        @keyup.enter="handleLogin" />
+        <input v-model="form.user" type="text" placeholder="Enter username" @keyup.enter="handleLogin" />
       </div>
       <div class="input-group">
         <label>PASSWORD</label>
-        <input v-model="form.password" type="password" placeholder="Enter password"
-        @keyup.enter="handleLogin" />
+        <input v-model="form.password" type="password" placeholder="Enter password" @keyup.enter="handleLogin" />
       </div>
-      <div v-if="error" class="error-msg">Username or password error.</div>
+      <div v-if="error" class="error-msg">{{ error }}</div>
       <div class="button-group">
         <button class="btn btn-cancel" @click="$emit('close')">cancel</button>
-        <button class="btn btn-confirm" @click="handleLogin">confirm</button>
+        <button class="btn btn-confirm" :disabled="loading" @click="handleLogin">{{ loading ? 'loading...' : 'confirm' }}</button>
       </div>
     </div>
   </div>
@@ -23,37 +21,40 @@
 
 <script setup>
 import { reactive, ref } from 'vue';
+import { loginApi } from '../services/backendApi';
 
 const emit = defineEmits(['close', 'login-success']);
-const error = ref(false);
+const error = ref('');
+const loading = ref(false);
 
 const form = reactive({
   user: '',
   password: ''
 });
 
-const handleLogin = () => {
-  // 验证唯一账号
-  if (form.user === 'stephen' && form.password === '666666') {
-    error.value = false;
-    emit('login-success');
-  } else {
-    error.value = true;
+const handleLogin = async () => {
+  loading.value = true;
+  error.value = '';
+  try {
+    const result = await loginApi({ username: form.user, password: form.password });
+    emit('login-success', result.user);
+  } catch (e) {
+    error.value = e.message || 'Username or password error.';
+  } finally {
+    loading.value = false;
   }
 };
 </script>
 
 <style scoped>
-
 .login-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  /* 背景虚化与遮罩 */
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(25px); 
+  backdrop-filter: blur(25px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -126,6 +127,7 @@ const handleLogin = () => {
   transition: 0.3s;
 }
 
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-cancel { background: rgba(255, 255, 255, 0.1); color: white; }
 .btn-confirm { background: white; color: black; }
 .btn:hover { opacity: 0.8; transform: translateY(-2px); }
