@@ -5,15 +5,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api:dev": "node server/apiServer.cjs",
+    "dev:full": "echo \"Run `npm run api:dev` and `npm run dev` in two terminals.\""
   },
   "dependencies": {
     "vue": "^3.5.30",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "mysql2": "^3.11.3",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.5",
     "vite": "^8.0.0"
   }
 }
-

@@ -4,13 +4,17 @@
       <h1>Servers</h1>
     </header>
 
-    <div class="cards-grid" v-if="isLoggedIn">
+    <div class="cards-grid" v-if="isLoggedIn && !nodesLoading">
       <ServerCard v-for="s in serverList" :key="s.id" :server="s" @click="openNodeModal('edit', s)" />
 
       <div class="add-card" @click="openNodeModal('add')">
         <span class="plus-icon">+</span>
         <span>Add Node</span>
       </div>
+    </div>
+
+    <div v-else-if="isLoggedIn && nodesLoading" class="empty-state">
+      <p>Loading nodes...</p>
     </div>
 
     <div v-else class="empty-state">
@@ -33,12 +37,12 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue';
+import { onMounted, reactive, watch } from 'vue';
 import NodeModal from '../components/NodeModal.vue';
 import ServerCard from '../components/ServerCard.vue';
-import { addServer, removeServer, serverList, updateServer } from '../stores/serverUniverse';
+import { addServer, loadServers, nodesLoading, removeServer, serverList, updateServer } from '../stores/serverUniverse';
 
-defineProps({ isLoggedIn: Boolean });
+const props = defineProps({ isLoggedIn: Boolean });
 
 const nodeModal = reactive({
   show: false,
@@ -52,11 +56,11 @@ const openNodeModal = (mode, data = {}) => {
   nodeModal.show = true;
 };
 
-const handleNodeSubmit = (formData) => {
+const handleNodeSubmit = async (formData) => {
   if (nodeModal.mode === 'add') {
-    addServer(formData);
+    await addServer(formData);
   } else {
-    const updated = updateServer(nodeModal.data.id, {
+    const updated = await updateServer(nodeModal.data.id, {
       ...formData,
       portStatuses: formData.portStatuses || nodeModal.data.portStatuses
     });
@@ -65,14 +69,14 @@ const handleNodeSubmit = (formData) => {
   nodeModal.show = false;
 };
 
-const handleNodeDelete = () => {
-  removeServer(nodeModal.data.id);
+const handleNodeDelete = async () => {
+  await removeServer(nodeModal.data.id);
   nodeModal.show = false;
 };
 
-const handleSshSuccess = ({ id, metrics, uptime }) => {
+const handleSshSuccess = async ({ id, metrics, uptime }) => {
   if (!id || !metrics) return;
-  const updated = updateServer(id, {
+  const updated = await updateServer(id, {
     status: 'online',
     metrics: {
       cpu: metrics.cpu,
@@ -84,14 +88,26 @@ const handleSshSuccess = ({ id, metrics, uptime }) => {
   if (updated) nodeModal.data = updated;
 };
 
-const handleRefreshStatus = ({ id, status, portStatuses }) => {
+const handleRefreshStatus = async ({ id, status, portStatuses }) => {
   if (!id) return;
-  const updated = updateServer(id, {
+  const updated = await updateServer(id, {
     status: status || undefined,
     portStatuses: portStatuses || undefined
   });
   if (updated) nodeModal.data = updated;
 };
+
+watch(
+  () => props.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) loadServers();
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  if (props.isLoggedIn) loadServers();
+});
 </script>
 
 <style scoped>
