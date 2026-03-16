@@ -1,92 +1,228 @@
 <template>
   <div class="space-canvas">
-    <div 
-      v-for="star in stars" 
-      :key="star.id" 
-      class="star" 
-      :style="{
-        top: star.top + '%',
-        left: star.left + '%',
-        width: star.size + 'px',
-        height: star.size + 'px',
-        backgroundColor: star.color,
-        animationDelay: star.delay + 's' /* 随机闪烁延迟 */
-      }"
-    ></div>
-    
-    <div class="space-demo-info">
-      Space Servers Universe
-    </div>
+    <div v-for="star in backgroundStars" :key="star.id" class="bg-star" :style="star.style"></div>
+
+    <template v-if="isLoggedIn">
+      <div
+        v-for="galaxy in galaxies"
+        :key="galaxy.id"
+        class="galaxy"
+        :style="{ left: galaxy.x + '%', top: galaxy.y + '%' }"
+        @mousemove="onGalaxyHover($event, galaxy.id)"
+        @mouseleave="onGalaxyLeave(galaxy.id)"
+      >
+        <div class="galaxy-core" :style="coreStyle(galaxy.nodeStatus, galaxy.id)">
+          <div class="star-title node-title">{{ galaxy.title }}</div>
+        </div>
+
+        <svg class="orbit-links" viewBox="0 0 260 260" preserveAspectRatio="none">
+          <line
+            v-for="port in galaxy.ports"
+            :key="`link-${galaxy.id}-${port.port}`"
+            x1="130"
+            y1="130"
+            :x2="port.x"
+            :y2="port.y"
+            :stroke="statusColor(port.status)"
+          />
+        </svg>
+
+        <div
+          v-for="port in galaxy.ports"
+          :key="`port-${galaxy.id}-${port.port}`"
+          class="port-star"
+          :style="{
+            left: `${(port.x / 260) * 100}%`,
+            top: `${(port.y / 260) * 100}%`,
+            backgroundColor: statusColor(port.status),
+            boxShadow: `0 0 10px ${statusColor(port.status)}`
+          }"
+          :title="port.message"
+        >
+          <div class="star-title port-title">{{ port.port }}</div>
+        </div>
+      </div>
+    </template>
+
+    <div v-else class="space-demo-info">Please log in to explore server universe.</div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, reactive } from 'vue';
+import { serverList } from '../stores/serverUniverse';
 
-// 存储星星数据的响应式数组
-const stars = ref([]);
+defineProps({ isLoggedIn: Boolean });
 
-// 生成繁星数据
-function generateStars() {
-  const TOTAL_STARS = 150; // 你可以调整星星的总数
-  for (let i = 0; i < TOTAL_STARS; i++) {
-    stars.value.push({
-      id: i,
-      // 随机位置 (0-100%)
-      top: Math.random() * 100, 
-      left: Math.random() * 100,
-      // 随机大小 (1px 到 3px 之间)
-      size: 1 + Math.random() * 2,
-      // 随机颜色 (大多数为纯白，少数带微弱的蓝/黄)
-      color: getRandomStarColor(),
-      // 随机动画延迟 (0s 到 3s 之间)
-      delay: Math.random() * 3
-    });
-  }
-}
+const hoverStates = reactive({});
 
-// 获取随机星星颜色的简单逻辑
-function getRandomStarColor() {
-  const colors = ['#fff', '#fff', '#fff', '#c0deff', '#ffefd5'];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
+const statusColor = (status) => {
+  if (status === 'up' || status === 'online') return '#2ed573';
+  if (status === 'degraded' || status === 'warning') return '#ffa502';
+  if (status === 'down' || status === 'offline') return '#ff4757';
+  return '#9ba3ad';
+};
 
-// 组件挂载时生成星星
-onMounted(() => {
-  generateStars();
-});
+const coreStyle = (status, galaxyId) => {
+  const color = statusColor(status);
+  return {
+    boxShadow: `0 0 20px ${color}, 0 0 60px ${color}55`,
+    background: `radial-gradient(circle, ${color} 0%, #ffffff 35%, #111 100%)`,
+    transform: `translate(${hoverStates[galaxyId]?.x || 0}px, ${hoverStates[galaxyId]?.y || 0}px)`
+  };
+};
+
+const backgroundStars = computed(() =>
+  Array.from({ length: 120 }, (_, i) => ({
+    id: i,
+    style: {
+      left: `${(i * 37) % 100}%`,
+      top: `${(i * 53) % 100}%`,
+      width: `${1 + (i % 3)}px`,
+      height: `${1 + (i % 3)}px`,
+      animationDelay: `${(i % 6) * 0.5}s`
+    }
+  }))
+);
+
+const toPorts = (server) => {
+  const fromStatuses = server.portStatuses?.length
+    ? server.portStatuses
+    : (server.ports || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((port) => ({ port, status: 'unknown', message: 'not checked' }));
+
+  return fromStatuses.map((item, idx) => {
+    const total = fromStatuses.length;
+    const angle = (Math.PI * 2 * idx) / Math.max(total, 1);
+    const radius = 64 + (idx % 3) * 18;
+    return {
+      ...item,
+      x: 130 + Math.cos(angle) * radius,
+      y: 130 + Math.sin(angle) * radius
+    };
+  });
+};
+
+const galaxies = computed(() =>
+  serverList.value.map((server, idx) => ({
+    id: server.id,
+    title: server.name || server.ip,
+    nodeStatus: server.status || 'unknown',
+    x: 18 + (idx % 4) * 24,
+    y: 24 + Math.floor(idx / 4) * 28,
+    ports: toPorts(server)
+  }))
+);
+
+const onGalaxyHover = (event, galaxyId) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const dx = ((event.clientX - rect.left) / rect.width - 0.5) * 10;
+  const dy = ((event.clientY - rect.top) / rect.height - 0.5) * 10;
+  hoverStates[galaxyId] = { x: dx, y: dy };
+};
+
+const onGalaxyLeave = (galaxyId) => {
+  hoverStates[galaxyId] = { x: 0, y: 0 };
+};
 </script>
 
 <style scoped>
-/* 宇宙画布样式 */
 .space-canvas {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* 径向渐变，从中心较亮的深蓝逐渐变黑，营造深邃感 */
-  background: radial-gradient(circle at center, #111 0%, #111 100%);
+  background: radial-gradient(circle at center, #0c111b 0%, #05070c 70%, #020202 100%);
 }
 
-/* 基础星星样式 */
-.star {
+.bg-star {
   position: absolute;
   border-radius: 50%;
-  opacity: 0; /* 初始透明，由动画控制闪烁 */
-  /* 应用名为 'twinkle' 的闪烁动画，无限循环，线性时间函数 */
-  animation: twinkle 4s infinite linear;
+  background: rgba(255, 255, 255, 0.8);
+  animation: twinkle 4s infinite ease-in-out;
 }
 
-/* 演示信息的临时样式 */
+.galaxy {
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  transform: translate(-50%, -50%);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.galaxy:hover {
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
+.galaxy-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: transform 0.35s ease-out, box-shadow 0.35s ease-out;
+}
+
+.orbit-links {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.orbit-links line {
+  stroke-width: 1.4;
+  opacity: 0.55;
+}
+
+.port-star {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: transform 0.35s ease-out;
+}
+
+.galaxy:hover .port-star {
+  transform: translate(-50%, -50%) scale(1.18);
+}
+
+.star-title {
+  position: absolute;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.68rem;
+  letter-spacing: 0.4px;
+}
+
+.node-title {
+  left: 50%;
+  top: -16px;
+  transform: translateX(-50%);
+}
+
+.port-title {
+  left: 50%;
+  top: -13px;
+  transform: translateX(-50%);
+}
+
 .space-demo-info {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: rgba(255, 255, 255, 0.2);
-  font-size: 1.2rem;
-  font-weight: 300;
-  letter-spacing: 2px;
-  pointer-events: none; /* 确保文字不干扰交互 */
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 1.1rem;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.95; }
 }
 </style>

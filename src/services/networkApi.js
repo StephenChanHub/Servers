@@ -1,0 +1,37 @@
+export const validateNodeConnection = async ({ ip, ports }) => {
+  const response = await fetch('/api/network/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ip, ports })
+  });
+
+  if (!response.ok) {
+    const errorBody = await safeJson(response);
+    throw new Error(errorBody?.message || `Validation request failed (${response.status})`);
+  }
+
+  return response.json();
+};
+
+export const connectViaSsh = async ({ ip, password }) => {
+  const response = await fetch('/api/network/ssh-connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ip, password })
+  });
+
+  if (!response.ok) {
+    const errorBody = await safeJson(response);
+    throw new Error(errorBody?.message || `SSH request failed (${response.status})`);
+  }
+
+  return response.json();
+};
+
+const safeJson = async (response) => {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
