@@ -1,8 +1,7 @@
 {
   "name": "servers",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "type": "module", 
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,10 +9,6 @@
     "api:dev": "node server/apiServer.cjs",
     "dev:full": "echo \"Run `npm run api:dev` and `npm run dev` in two terminals.\""
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "vue": "^3.5.30",
     "vue-router": "^4.6.4",
