@@ -2,7 +2,10 @@
   <div class="modal-overlay" @click.self="handleOverlayClick">
     <div class="node-container glass-card">
       <div v-if="view !== 'ssh' && view !== 'confirm_delete'" class="top-right-action">
-        <button class="ssh-btn-trigger" @click="enterSSHView">
+        <button class="refresh-btn-trigger" :disabled="refreshing || !form.ip" @click="refreshNodeStatus">
+          {{ refreshing ? 'Refreshing...' : 'Refresh' }}
+        </button>
+        <button class="ssh-btn-trigger" :disabled="!form.ip" @click="enterSSHView">
           <span class="icon"></span> SSH
         </button>
       </div>
@@ -104,9 +107,9 @@
         <div class="port-section">
           <label>MONITORED PORTS</label>
           <ul class="port-status-list">
-            <li v-for="port in portList" :key="port">
-              <span class="breath-dot" :class="{ active: isConnected }"></span>
-              {{ port }}
+            <li v-for="portItem in mergedPortStatuses" :key="portItem.port" :title="portItem.message">
+              <span class="breath-dot" :class="dotClass(portItem.status)"></span>
+              {{ portItem.port }}
             </li>
           </ul>
         </div>
@@ -136,15 +139,17 @@ const props = defineProps({
   existingIps: Array
 });
 
-const emit = defineEmits(['close', 'submit', 'delete', 'ssh-success']);
+const emit = defineEmits(['close', 'submit', 'delete', 'ssh-success', 'refresh-status']);
 
 const view = ref(props.mode === 'add' ? 'form' : 'detail');
 const isEditing = ref(false);
+const refreshing = ref(false);
 const sshPassword = ref('');
 const errors = reactive({ ip: false });
 const ipErrorMsg = ref('IP is required');
 const connectivityResult = reactive({ loading: false, success: false, message: '', details: [] });
 const sshResult = reactive({ loading: false, success: false, message: '', metrics: null });
+const livePortStatuses = ref([]);
 
 const form = reactive({
   name: props.initialData?.name || '',
@@ -153,7 +158,27 @@ const form = reactive({
   remark: props.initialData?.remark || ''
 });
 
-const portList = computed(() => (form.ports ? form.ports.split(',').map((p) => p.trim()).filter(Boolean) : []));
+const portList = computed(() =>
+  form.ports
+    ? form.ports
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : []
+);
+
+const mergedPortStatuses = computed(() => {
+  if (livePortStatuses.value.length) return livePortStatuses.value;
+  if (props.initialData?.portStatuses?.length) return props.initialData.portStatuses;
+  return portList.value.map((port) => ({ port, status: 'unknown', message: 'not checked' }));
+});
+
+const dotClass = (status) => {
+  if (status === 'up') return 'active-up';
+  if (status === 'degraded') return 'active-degraded';
+  if (status === 'down') return 'active-down';
+  return 'inactive';
+};
 
 const enterSSHView = () => {
   if (!form.ip.trim()) {
@@ -161,10 +186,59 @@ const enterSSHView = () => {
     ipErrorMsg.value = 'Please enter IP first';
     return;
   }
-
   sshResult.message = '';
   sshResult.metrics = null;
   view.value = 'ssh';
+};
+
+const mapConnectivityToPortStatuses = (result) =>
+  (result.tcpChecks || []).map((check) => ({
+    port: String(check.port),
+    status: check.status || (check.success ? 'up' : 'down'),
+    message: check.message
+  }));
+
+const applyConnectivityResult = (result) => {
+  const portStatuses = mapConnectivityToPortStatuses(result);
+
+  connectivityResult.success = !!result.success;
+  connectivityResult.message = result.message;
+  connectivityResult.details = [
+    `Ping: ${result.ping?.message || 'N/A'}`,
+    ...(result.tcpChecks || []).map((check) => `TCP ${check.port}: ${check.message}`)
+  ];
+
+  livePortStatuses.value = portStatuses;
+  return portStatuses;
+};
+
+const deriveNodeStatus = (result) => {
+  if (result.overallStatus) return result.overallStatus;
+  if (result.success) return 'online';
+  if (result.ping?.status === 'down') return 'offline';
+  return 'warning';
+};
+
+const refreshNodeStatus = async () => {
+  if (!form.ip) return;
+  refreshing.value = true;
+  try {
+    const result = await validateNodeConnection({ ip: form.ip, ports: portList.value });
+    const portStatuses = applyConnectivityResult(result);
+
+    if (props.initialData?.id) {
+      emit('refresh-status', {
+        id: props.initialData.id,
+        status: deriveNodeStatus(result),
+        portStatuses
+      });
+    }
+  } catch (error) {
+    connectivityResult.success = false;
+    connectivityResult.message = error.message;
+  } finally {
+    refreshing.value = false;
+  }
 };
 
 const handleSSHConnect = async () => {
@@ -185,7 +259,11 @@ const handleSSHConnect = async () => {
     sshResult.metrics = result.metrics || null;
 
     if (result.success) {
-      emit('ssh-success', { id: props.initialData?.id, metrics: result.metrics, uptime: result.metrics?.uptime });
+      emit('ssh-success', {
+        id: props.initialData?.id,
+        metrics: result.metrics,
+        uptime: result.metrics?.uptime
+      });
     }
   } catch (error) {
     sshResult.success = false;
@@ -234,29 +312,22 @@ const validateAndSubmit = async () => {
   connectivityResult.details = [];
 
   try {
-    const parsedPorts = portList.value;
-    const result = await validateNodeConnection({ ip: form.ip, ports: parsedPorts });
+    const result = await validateNodeConnection({ ip: form.ip, ports: portList.value });
+    const portStatuses = applyConnectivityResult(result);
+    if (!result.success) return;
 
-    connectivityResult.success = !!result.success;
-    connectivityResult.message = result.message;
-    connectivityResult.details = [
-      `Ping: ${result.ping?.message || 'N/A'}`,
-      ...(result.tcpChecks || []).map((check) => `TCP ${check.port}: ${check.message}`)
-    ];
-
-    if (!result.success) {
-      return;
-    }
+    emit('submit', {
+      ...form,
+      status: deriveNodeStatus(result),
+      portStatuses
+    });
+    isEditing.value = false;
   } catch (error) {
     connectivityResult.success = false;
     connectivityResult.message = error.message;
-    return;
   } finally {
     connectivityResult.loading = false;
   }
-
-  emit('submit', { ...form });
-  isEditing.value = false;
 };
 
 const getMetricColor = (v) => (v > 80 ? '#ff4757' : v > 50 ? '#ffa502' : '#2ed573');
@@ -294,9 +365,12 @@ const getMetricColor = (v) => (v > 80 ? '#ff4757' : v > 50 ? '#ffa502' : '#2ed57
   top: 30px;
   right: 30px;
   z-index: 10;
+  display: flex;
+  gap: 8px;
 }
 
-.ssh-btn-trigger {
+.ssh-btn-trigger,
+.refresh-btn-trigger {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: white;
@@ -307,8 +381,15 @@ const getMetricColor = (v) => (v > 80 ? '#ff4757' : v > 50 ? '#ffa502' : '#2ed57
   transition: 0.3s;
 }
 
-.ssh-btn-trigger:hover {
+.ssh-btn-trigger:hover,
+.refresh-btn-trigger:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.ssh-btn-trigger:disabled,
+.refresh-btn-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .remark-display {
@@ -443,12 +524,27 @@ const getMetricColor = (v) => (v > 80 ? '#ff4757' : v > 50 ? '#ffa502' : '#2ed57
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #333;
 }
 
-.breath-dot.active {
+.inactive {
+  background: #4b4b4b;
+}
+
+.active-up {
   background: #2ed573;
   box-shadow: 0 0 8px #2ed573;
+  animation: blink 2s infinite;
+}
+
+.active-degraded {
+  background: #ffa502;
+  box-shadow: 0 0 8px #ffa502;
+  animation: blink 2s infinite;
+}
+
+.active-down {
+  background: #ff4757;
+  box-shadow: 0 0 8px #ff4757;
   animation: blink 2s infinite;
 }
 

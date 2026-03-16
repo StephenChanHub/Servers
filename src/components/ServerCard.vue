@@ -63,7 +63,8 @@ const getMetricColor = (val) => {
 const dotClass = (status) => {
   if (status === 'up') return 'dot-up';
   if (status === 'degraded') return 'dot-degraded';
-  return 'dot-down';
+  if (status === 'down') return 'dot-down';
+  return 'dot-unknown';
 };
 </script>
 
@@ -95,4 +96,5 @@ const dotClass = (status) => {
 .dot-up { background: #2ed573; }
 .dot-degraded { background: #ffa502; }
 .dot-down { background: #ff4757; }
+.dot-unknown { background: #4b4b4b; }
 </style>

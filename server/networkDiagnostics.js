@@ -7,9 +7,6 @@ const execFileAsync = promisify(execFile);
 const parseBody = async (req) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf-8'));
 };
@@ -39,6 +36,17 @@ const classifyNetworkIssue = (message = '') => {
   return 'down';
 };
 
+const resolveOverallStatus = (ping, tcpChecks) => {
+  if (!ping.success && ping.status === 'down') return 'offline';
+  if (!ping.success && ping.status === 'degraded') return 'warning';
+
+  const hasDown = tcpChecks.some((item) => item.status === 'down');
+  const hasDegraded = tcpChecks.some((item) => item.status === 'degraded');
+
+  if (hasDown || hasDegraded) return 'warning';
+  return 'online';
+};
+
 const runPing = async (ip) => {
   try {
     await execFileAsync('ping', ['-c', '1', '-W', '2', ip]);
@@ -55,20 +63,6 @@ const runPing = async (ip) => {
 
 const checkTcpPort = (ip, port) =>
   new Promise((resolve) => {
-const runPing = async (ip) => {
-  try {
-    await execFileAsync('ping', ['-c', '1', '-W', '2', ip]);
-    return { success: true, message: 'reachable' };
-  } catch (error) {
-    return {
-      success: false,
-      message: error?.stderr?.trim() || error?.message || 'ping failed'
-    };
-  }
-};
-
-const checkTcpPort = (ip, port) => {
-  return new Promise((resolve) => {
     const socket = new net.Socket();
     let done = false;
 
@@ -93,18 +87,6 @@ const checkTcpPort = (ip, port) => {
       finish({ port, success: false, message, status: classifyNetworkIssue(message) });
     });
   });
-      finish({ port, success: true, message: 'reachable' });
-    });
-
-    socket.on('timeout', () => {
-      finish({ port, success: false, message: 'connection timeout' });
-    });
-
-    socket.on('error', (err) => {
-      finish({ port, success: false, message: err.message });
-    });
-  });
-};
 
 const runSshDiagnostics = async (ip, password) => {
   let sshpassAvailable = true;
@@ -183,9 +165,8 @@ export const networkApiMiddleware = async (req, res, next) => {
       const ping = await runPing(ip);
       const tcpChecks = await Promise.all(ports.map((port) => checkTcpPort(ip, Number(port))));
       const success = ping.success && tcpChecks.every((item) => item.success);
+      const overallStatus = resolveOverallStatus(ping, tcpChecks);
 
-
-      const success = ping.success && tcpChecks.every((item) => item.success);
       const failReasons = [
         !ping.success ? `Ping failed: ${ping.message}` : null,
         ...tcpChecks.filter((item) => !item.success).map((item) => `TCP ${item.port} failed: ${item.message}`)
@@ -193,6 +174,7 @@ export const networkApiMiddleware = async (req, res, next) => {
 
       sendJson(res, 200, {
         success,
+        overallStatus,
         message: success ? 'Network verification passed.' : failReasons.join('; '),
         ping,
         tcpChecks
