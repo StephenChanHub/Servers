@@ -66,7 +66,7 @@ const seededRandom = (seed) => {
 };
 
 const universeHeight = computed(() => {
-  const base = 1000;
+  const base = 1800;
   const extra = Math.max(0, serverList.value.length - 3) * 220;
   return base + extra;
 });
@@ -136,8 +136,7 @@ onMounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   background: radial-gradient(circle at center, #0c111b 0%, #05070c 70%, #020202 100%);
 }
 
@@ -185,10 +184,11 @@ onMounted(() => {
   height: 0;
   transform: rotate(var(--orbit-angle));
   transform-origin: center;
+  animation: orbit-spin var(--orbit-duration) linear infinite;
 }
 
 .galaxy:hover .orbit-ring {
-  animation: orbit-spin var(--orbit-duration) linear infinite;
+  animation-play-state: paused;
 }
 
 .port-star {

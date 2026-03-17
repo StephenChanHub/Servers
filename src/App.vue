@@ -106,7 +106,8 @@ watch(() => route.path, (to) => {
   background: #111; /* 纯黑底色能让羽化和星空效果更纯净 */
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
   position: relative;
 }
 
@@ -122,9 +123,33 @@ watch(() => route.path, (to) => {
   left: 0;
   width: 100%;
   height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   /* 硬件加速，确保模糊动画不卡顿 */
   will-change: transform, opacity, filter;
 }
+
+
+/* Global white scrollbar */
+.page-wrapper::-webkit-scrollbar,
+.servers-page::-webkit-scrollbar,
+.space-canvas::-webkit-scrollbar {
+  width: 8px;
+}
+
+.page-wrapper::-webkit-scrollbar-track,
+.servers-page::-webkit-scrollbar-track,
+.space-canvas::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-wrapper::-webkit-scrollbar-thumb,
+.servers-page::-webkit-scrollbar-thumb,
+.space-canvas::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 20px;
+}
+
 
 /* --- 核心：纵向位移 + 羽化过渡动画 --- */
 
