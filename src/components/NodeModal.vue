@@ -2,10 +2,10 @@
   <div class="modal-overlay" @click.self="handleOverlayClick">
     <div class="node-container glass-card">
       <div v-if="view !== 'ssh' && view !== 'confirm_delete'" class="top-right-action">
-        <button class="refresh-btn-trigger" :disabled="refreshing || !form.ip" @click="refreshNodeStatus">
+        <button class="refresh-btn-trigger" :disabled="refreshing || !form.ip.trim()" @click="refreshNodeStatus">
           {{ refreshing ? 'Refreshing...' : 'Refresh' }}
         </button>
-        <button class="ssh-btn-trigger" :disabled="!form.ip" @click="enterSSHView">
+        <button class="ssh-btn-trigger" :disabled="!form.ip.trim()" @click="enterSSHView">
           <span class="icon"></span> SSH
         </button>
       </div>
@@ -13,7 +13,7 @@
       <div v-if="view === 'ssh'" class="view-content fade-in">
         <h2 class="modal-title">Secure Connection</h2>
         <div class="ssh-form">
-          <p class="hint">Target: <strong>{{ form.ip }}</strong></p>
+          <p class="hint">Target: <strong>{{ sshResult.target || form.ip }}</strong></p>
           <div class="input-group">
             <label>SSH PASSWORD</label>
             <input v-model="sshPassword" type="password" placeholder="••••••" @keyup.enter="handleSSHConnect" />
@@ -54,8 +54,8 @@
             <input v-model="form.name" maxlength="10" placeholder="Server Name" />
           </div>
           <div class="input-group">
-            <label>IP ADDRESS</label>
-            <input v-model="form.ip" placeholder="0.0.0.0" :class="{ 'error-border': errors.ip }" />
+            <label>IP / DOMAIN</label>
+            <input v-model="form.ip" placeholder="192.168.1.1 or example.com" :class="{ 'error-border': errors.ip }" />
             <span v-if="errors.ip" class="error-tip">{{ ipErrorMsg }}</span>
           </div>
           <div class="input-group full-width">
@@ -148,7 +148,7 @@ const sshPassword = ref('');
 const errors = reactive({ ip: false });
 const ipErrorMsg = ref('IP is required');
 const connectivityResult = reactive({ loading: false, success: false, message: '', details: [] });
-const sshResult = reactive({ loading: false, success: false, message: '', metrics: null });
+const sshResult = reactive({ loading: false, success: false, message: '', metrics: null, target: '' });
 const livePortStatuses = ref([]);
 
 const form = reactive({
@@ -173,6 +173,8 @@ const mergedPortStatuses = computed(() => {
   return portList.value.map((port) => ({ port, status: 'unknown', message: 'not checked' }));
 });
 
+const normalizedTarget = () => form.ip.trim();
+
 const dotClass = (status) => {
   if (status === 'up') return 'active-up';
   if (status === 'degraded') return 'active-degraded';
@@ -188,6 +190,7 @@ const enterSSHView = () => {
   }
   sshResult.message = '';
   sshResult.metrics = null;
+  sshResult.target = '';
   view.value = 'ssh';
 };
 
@@ -204,9 +207,10 @@ const applyConnectivityResult = (result) => {
   connectivityResult.success = !!result.success;
   connectivityResult.message = result.message;
   connectivityResult.details = [
+    result.resolvedFromDomain ? `DNS: ${result.targetInput} -> ${result.resolvedIp}` : null,
     `Ping: ${result.ping?.message || 'N/A'}`,
     ...(result.tcpChecks || []).map((check) => `TCP ${check.port}: ${check.message}`)
-  ];
+  ].filter(Boolean);
 
   livePortStatuses.value = portStatuses;
   return portStatuses;
@@ -223,8 +227,9 @@ const refreshNodeStatus = async () => {
   if (!form.ip) return;
   refreshing.value = true;
   try {
-    const result = await validateNodeConnection({ ip: form.ip, ports: portList.value });
+    const result = await validateNodeConnection({ target: normalizedTarget(), ports: portList.value });
     const portStatuses = applyConnectivityResult(result);
+    if (result.resolvedIp) form.ip = result.resolvedIp;
 
     if (props.initialData?.id) {
       emit('refresh-status', {
@@ -253,10 +258,11 @@ const handleSSHConnect = async () => {
   sshResult.metrics = null;
 
   try {
-    const result = await connectViaSsh({ ip: form.ip, password: sshPassword.value });
+    const result = await connectViaSsh({ target: normalizedTarget(), password: sshPassword.value });
     sshResult.success = !!result.success;
     sshResult.message = result.message;
     sshResult.metrics = result.metrics || null;
+    sshResult.target = result.target || normalizedTarget();
 
     if (result.success) {
       emit('ssh-success', {
@@ -292,9 +298,9 @@ const handleOverlayClick = () => {
 };
 
 const validateAndSubmit = async () => {
-  const isDuplicate = props.existingIps.includes(form.ip) && form.ip !== props.initialData?.ip;
+  const rawTarget = normalizedTarget();
 
-  if (!form.ip) {
+  if (!rawTarget) {
     errors.ip = true;
     ipErrorMsg.value = 'IP is required';
     return;
@@ -308,24 +314,28 @@ const validateAndSubmit = async () => {
     return;
   }
 
-  if (isDuplicate) {
-    errors.ip = true;
-    ipErrorMsg.value = 'Duplicate IP detected';
-    return;
-  }
-
   errors.ip = false;
   connectivityResult.loading = true;
   connectivityResult.message = '';
   connectivityResult.details = [];
 
   try {
-    const result = await validateNodeConnection({ ip: form.ip, ports: portList.value });
+    const result = await validateNodeConnection({ target: normalizedTarget(), ports: portList.value });
     const portStatuses = applyConnectivityResult(result);
+    if (result.resolvedIp) form.ip = result.resolvedIp;
+
+    const isDuplicateResolvedIp = props.existingIps.includes(result.resolvedIp) && result.resolvedIp !== props.initialData?.ip;
+    if (isDuplicateResolvedIp) {
+      errors.ip = true;
+      ipErrorMsg.value = 'Duplicate IP detected after domain resolve';
+      return;
+    }
+
     if (!result.success) return;
 
     emit('submit', {
       ...form,
+      ip: result.resolvedIp || form.ip,
       status: deriveNodeStatus(result),
       portStatuses
     });

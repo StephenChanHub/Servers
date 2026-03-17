@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import net from 'node:net';
 import { promisify } from 'node:util';
+import dns from 'node:dns/promises';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,6 +21,29 @@ const sendJson = (res, statusCode, payload) => {
 const validatePort = (value) => {
   const port = Number(value);
   return Number.isInteger(port) && port >= 1 && port <= 65535;
+};
+
+const isIpv4Like = (text = '') => /^(\d{1,3}\.){3}\d{1,3}$/.test(text);
+
+const resolveTargetHost = async (targetRaw) => {
+  const targetInput = String(targetRaw || '').trim();
+  if (!targetInput) throw new Error('IP or domain is required.');
+
+  if (isIpv4Like(targetInput)) {
+    return { targetInput, resolvedIp: targetInput, resolvedFromDomain: false };
+  }
+
+  const records = await dns.lookup(targetInput, { all: true, verbatim: true });
+  const ipv4 = records.find((item) => item.family === 4);
+  if (!ipv4?.address) {
+    throw new Error(`Domain resolve failed: ${targetInput}`);
+  }
+
+  return {
+    targetInput,
+    resolvedIp: ipv4.address,
+    resolvedFromDomain: true
+  };
 };
 
 const classifyNetworkIssue = (message = '') => {
@@ -117,7 +141,7 @@ const runMetricWithFallback = async (sshBaseArgs, commandList, defaultValue = 0)
   return defaultValue;
 };
 
-const runSshDiagnostics = async (ip, password) => {
+const runSshDiagnostics = async (target, password) => {
   let sshpassAvailable = true;
   try {
     await execFileAsync('sshpass', ['-V']);
@@ -132,6 +156,8 @@ const runSshDiagnostics = async (ip, password) => {
     };
   }
 
+  const { targetInput, resolvedIp, resolvedFromDomain } = await resolveTargetHost(target);
+
   const sshBaseArgs = [
     '-p',
     password,
@@ -142,7 +168,7 @@ const runSshDiagnostics = async (ip, password) => {
     'UserKnownHostsFile=/dev/null',
     '-o',
     'ConnectTimeout=6',
-    `root@${ip}`
+    `root@${resolvedIp}`
   ];
 
   try {
@@ -152,7 +178,7 @@ const runSshDiagnostics = async (ip, password) => {
     }
 
     const cpu = await runMetricWithFallback(sshBaseArgs, [
-      "LC_ALL=C top -bn1 | awk -F',' '/Cpu\\(s\\)|%Cpu/{for(i=1;i<=NF;i++){if($i ~ /(id|idle)/){gsub(/[^0-9.]/,\"\",$i); if($i != \"\"){printf(\"%.0f\",100-$i); exit}}}}'",
+      "LC_ALL=C top -bn1 | awk -F',' '/Cpu\(s\)|%Cpu/{for(i=1;i<=NF;i++){if($i ~ /(id|idle)/){gsub(/[^0-9.]/,\"\",$i); if($i != \"\"){printf(\"%.0f\",100-$i); exit}}}}'",
       "LC_ALL=C vmstat 1 2 | tail -1 | awk '{print 100-$15}'",
       "top -l 1 | awk -F'[:, ]+' '/CPU usage/ {printf(\"%.0f\", $3 + $5)}'"
     ]);
@@ -176,12 +202,20 @@ const runSshDiagnostics = async (ip, password) => {
     return {
       success: true,
       message: 'SSH connection successful and metrics collected.',
+      target: resolvedIp,
+      targetInput,
+      resolvedIp,
+      resolvedFromDomain,
       metrics: { cpu, ram, disk, uptime }
     };
   } catch (error) {
     return {
       success: false,
-      message: error?.stderr?.trim() || error?.message || 'SSH connection failed.'
+      message: error?.stderr?.trim() || error?.message || 'SSH connection failed.',
+      target: resolvedIp,
+      targetInput,
+      resolvedIp,
+      resolvedFromDomain
     };
   }
 };
@@ -189,9 +223,10 @@ const runSshDiagnostics = async (ip, password) => {
 export const networkApiMiddleware = async (req, res, next) => {
   if (req.url === '/api/network/validate' && req.method === 'POST') {
     try {
-      const { ip, ports = [] } = await parseBody(req);
-      if (!ip) {
-        sendJson(res, 400, { success: false, message: 'IP is required.' });
+      const { target, ip, ports = [] } = await parseBody(req);
+      const normalizedTarget = String(target || ip || '').trim();
+      if (!normalizedTarget) {
+        sendJson(res, 400, { success: false, message: 'IP or domain is required.' });
         return;
       }
 
@@ -201,8 +236,9 @@ export const networkApiMiddleware = async (req, res, next) => {
         return;
       }
 
-      const ping = await runPing(ip);
-      const tcpChecks = await Promise.all(ports.map((port) => checkTcpPort(ip, Number(port))));
+      const resolved = await resolveTargetHost(normalizedTarget);
+      const ping = await runPing(resolved.resolvedIp);
+      const tcpChecks = await Promise.all(ports.map((port) => checkTcpPort(resolved.resolvedIp, Number(port))));
       const success = ping.success && tcpChecks.every((item) => item.success);
       const overallStatus = resolveOverallStatus(ping, tcpChecks);
 
@@ -215,6 +251,9 @@ export const networkApiMiddleware = async (req, res, next) => {
         success,
         overallStatus,
         message: success ? 'Network verification passed.' : failReasons.join('; '),
+        targetInput: resolved.targetInput,
+        resolvedIp: resolved.resolvedIp,
+        resolvedFromDomain: resolved.resolvedFromDomain,
         ping,
         tcpChecks
       });
@@ -227,13 +266,14 @@ export const networkApiMiddleware = async (req, res, next) => {
 
   if (req.url === '/api/network/ssh-connect' && req.method === 'POST') {
     try {
-      const { ip, password } = await parseBody(req);
-      if (!ip || !password) {
-        sendJson(res, 400, { success: false, message: 'IP and SSH password are required.' });
+      const { target, ip, password } = await parseBody(req);
+      const normalizedTarget = String(target || ip || '').trim();
+      if (!normalizedTarget || !password) {
+        sendJson(res, 400, { success: false, message: 'IP/domain and SSH password are required.' });
         return;
       }
 
-      const result = await runSshDiagnostics(ip, password);
+      const result = await runSshDiagnostics(normalizedTarget, password);
       sendJson(res, result.success ? 200 : 400, result);
       return;
     } catch (error) {
