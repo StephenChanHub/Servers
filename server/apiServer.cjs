@@ -47,10 +47,10 @@ const validateCredentials = (username, password) => {
 };
 
 const validateNodePayload = (name, ip) => {
-  if (!name || !ip) {
-    return 'name and ip are required';
+  if (!ip) {
+    return 'ip is required';
   }
-  if (name.length > MAX_NODE_NAME_LENGTH) {
+  if (name && name.length > MAX_NODE_NAME_LENGTH) {
     return `node name must be <= ${MAX_NODE_NAME_LENGTH} characters`;
   }
   return null;
@@ -143,8 +143,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/backend-api/nodes' && req.method === 'POST') {
       const body = await parseJsonBody(req);
       const { name, ip, ports, remark, sshPassword, status = 'online', metrics = {}, uptime = '0m', portStatuses = [] } = body;
+      const normalizedName = (name || '').trim() || String(ip || '').trim();
 
-      const errorMessage = validateNodePayload(name, ip);
+      const errorMessage = validateNodePayload(normalizedName, ip);
       if (errorMessage) {
         send(res, 400, { success: false, message: errorMessage });
         return;
@@ -154,7 +155,7 @@ const server = http.createServer(async (req, res) => {
         `INSERT INTO nodes (name, ip_address, ports, remark, ssh_password, status, cpu, ram, disk, uptime, port_statuses)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          name,
+          normalizedName,
           ip,
           ports || '',
           remark || '',
@@ -187,6 +188,7 @@ const server = http.createServer(async (req, res) => {
       const merged = {
         ...current,
         ...body,
+        name: (body.name || '').trim() || current.name || String(body.ip || current.ip || '').trim(),
         metrics: { ...current.metrics, ...(body.metrics || {}) }
       };
 

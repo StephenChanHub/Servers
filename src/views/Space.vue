@@ -150,7 +150,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(255, 255, 255, 0.3);
+  background: radial-gradient(circle at center, #0c111b 0%, #05070c 70%, #020202 100%);
 }
 
 .bg-star {

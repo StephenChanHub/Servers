@@ -56,45 +56,67 @@ const openNodeModal = (mode, data = {}) => {
   nodeModal.show = true;
 };
 
+const notifyError = (error, fallback) => {
+  const message = error?.message || fallback;
+  console.error(message);
+  window.alert(message);
+};
+
 const handleNodeSubmit = async (formData) => {
-  if (nodeModal.mode === 'add') {
-    await addServer(formData);
-  } else {
-    const updated = await updateServer(nodeModal.data.id, {
-      ...formData,
-      portStatuses: formData.portStatuses || nodeModal.data.portStatuses
-    });
-    if (updated) nodeModal.data = updated;
+  try {
+    if (nodeModal.mode === 'add') {
+      await addServer(formData);
+    } else {
+      const updated = await updateServer(nodeModal.data.id, {
+        ...formData,
+        portStatuses: formData.portStatuses || nodeModal.data.portStatuses
+      });
+      if (updated) nodeModal.data = updated;
+    }
+    nodeModal.show = false;
+  } catch (error) {
+    notifyError(error, 'Save node failed');
   }
-  nodeModal.show = false;
 };
 
 const handleNodeDelete = async () => {
-  await removeServer(nodeModal.data.id);
-  nodeModal.show = false;
+  try {
+    await removeServer(nodeModal.data.id);
+    nodeModal.show = false;
+  } catch (error) {
+    notifyError(error, 'Delete node failed');
+  }
 };
 
 const handleSshSuccess = async ({ id, metrics, uptime }) => {
   if (!id || !metrics) return;
-  const updated = await updateServer(id, {
-    status: 'online',
-    metrics: {
-      cpu: metrics.cpu,
-      ram: metrics.ram,
-      disk: metrics.disk
-    },
-    uptime
-  });
-  if (updated) nodeModal.data = updated;
+  try {
+    const updated = await updateServer(id, {
+      status: 'online',
+      metrics: {
+        cpu: metrics.cpu,
+        ram: metrics.ram,
+        disk: metrics.disk
+      },
+      uptime
+    });
+    if (updated) nodeModal.data = updated;
+  } catch (error) {
+    notifyError(error, 'Update metrics failed');
+  }
 };
 
 const handleRefreshStatus = async ({ id, status, portStatuses }) => {
   if (!id) return;
-  const updated = await updateServer(id, {
-    status: status || undefined,
-    portStatuses: portStatuses || undefined
-  });
-  if (updated) nodeModal.data = updated;
+  try {
+    const updated = await updateServer(id, {
+      status: status || undefined,
+      portStatuses: portStatuses || undefined
+    });
+    if (updated) nodeModal.data = updated;
+  } catch (error) {
+    notifyError(error, 'Refresh status failed');
+  }
 };
 
 watch(
