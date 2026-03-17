@@ -88,6 +88,35 @@ const checkTcpPort = (ip, port) =>
     });
   });
 
+const extractPercentLikeNumber = (text) => {
+  const match = String(text || '').match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const value = Number.parseFloat(match[0]);
+  if (!Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  if (rounded < 0) return 0;
+  if (rounded > 100) return 100;
+  return rounded;
+};
+
+const runRemoteCommand = async (sshBaseArgs, command, timeout = 12000) => {
+  const { stdout } = await execFileAsync('sshpass', [...sshBaseArgs, command], { timeout });
+  return stdout.trim();
+};
+
+const runMetricWithFallback = async (sshBaseArgs, commandList, defaultValue = 0) => {
+  for (const command of commandList) {
+    try {
+      const output = await runRemoteCommand(sshBaseArgs, command);
+      const parsed = extractPercentLikeNumber(output);
+      if (parsed !== null) return parsed;
+    } catch {
+      // try next fallback
+    }
+  }
+  return defaultValue;
+};
+
 const runSshDiagnostics = async (ip, password) => {
   let sshpassAvailable = true;
   try {
@@ -117,27 +146,37 @@ const runSshDiagnostics = async (ip, password) => {
   ];
 
   try {
-    const { stdout } = await execFileAsync('sshpass', [...sshBaseArgs, 'echo connected'], { timeout: 10000 });
-    if (!stdout.includes('connected')) {
+    const helloOutput = await runRemoteCommand(sshBaseArgs, 'echo connected', 10000);
+    if (!helloOutput.includes('connected')) {
       return { success: false, message: 'SSH connected but validation output is missing.' };
     }
 
-    const [cpuOut, ramOut, diskOut, uptimeOut] = await Promise.all([
-      execFileAsync('sshpass', [...sshBaseArgs, "top -bn1 | awk '/Cpu\(s\)/ {print 100-$8}'"]),
-      execFileAsync('sshpass', [...sshBaseArgs, "free | awk '/Mem/ {printf(\"%.0f\", $3/$2*100)}'"]),
-      execFileAsync('sshpass', [...sshBaseArgs, "df / | awk 'NR==2 {print $5}' | tr -d '%' "]),
-      execFileAsync('sshpass', [...sshBaseArgs, 'uptime -p'])
+    const cpu = await runMetricWithFallback(sshBaseArgs, [
+      "LC_ALL=C top -bn1 | awk -F',' '/Cpu\\(s\\)|%Cpu/{for(i=1;i<=NF;i++){if($i ~ /(id|idle)/){gsub(/[^0-9.]/,\"\",$i); if($i != \"\"){printf(\"%.0f\",100-$i); exit}}}}'",
+      "LC_ALL=C vmstat 1 2 | tail -1 | awk '{print 100-$15}'",
+      "top -l 1 | awk -F'[:, ]+' '/CPU usage/ {printf(\"%.0f\", $3 + $5)}'"
     ]);
+
+    const ram = await runMetricWithFallback(sshBaseArgs, [
+      "free | awk '/Mem/ {printf(\"%.0f\", $3/$2*100)}'"
+    ]);
+
+    const disk = await runMetricWithFallback(sshBaseArgs, [
+      "df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}'"
+    ]);
+
+    let uptime = 'N/A';
+    try {
+      uptime = await runRemoteCommand(sshBaseArgs, 'uptime -p || uptime');
+      if (!uptime) uptime = 'N/A';
+    } catch {
+      uptime = 'N/A';
+    }
 
     return {
       success: true,
       message: 'SSH connection successful and metrics collected.',
-      metrics: {
-        cpu: Number.parseInt(cpuOut.stdout.trim(), 10) || 0,
-        ram: Number.parseInt(ramOut.stdout.trim(), 10) || 0,
-        disk: Number.parseInt(diskOut.stdout.trim(), 10) || 0,
-        uptime: uptimeOut.stdout.trim() || 'N/A'
-      }
+      metrics: { cpu, ram, disk, uptime }
     };
   } catch (error) {
     return {

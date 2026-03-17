@@ -2,10 +2,23 @@
   <div class="servers-page" :class="{ locked: nodeModal.show }">
     <header class="page-header">
       <h1>Servers</h1>
+      <p class="sort-hint">Drag cards to reorder freely.</p>
     </header>
 
     <div class="cards-grid" v-if="isLoggedIn && !nodesLoading">
-      <ServerCard v-for="s in serverList" :key="s.id" :server="s" @click="openNodeModal('edit', s)" />
+      <div
+        v-for="s in serverList"
+        :key="s.id"
+        class="card-wrapper"
+        :class="{ 'is-dragging': draggingId === s.id, 'is-drag-over': dragOverId === s.id }"
+        draggable="true"
+        @dragstart="onDragStart(s.id, $event)"
+        @dragover.prevent="onDragOver(s.id)"
+        @drop.prevent="onDrop(s.id)"
+        @dragend="onDragEnd"
+      >
+        <ServerCard :server="s" @click="openNodeModal('edit', s)" />
+      </div>
 
       <div class="add-card" @click="openNodeModal('add')">
         <span class="plus-icon">+</span>
@@ -37,10 +50,10 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, watch } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import NodeModal from '../components/NodeModal.vue';
 import ServerCard from '../components/ServerCard.vue';
-import { addServer, loadServers, nodesLoading, removeServer, serverList, updateServer } from '../stores/serverUniverse';
+import { addServer, loadServers, nodesLoading, removeServer, reorderServers, serverList, updateServer } from '../stores/serverUniverse';
 
 const props = defineProps({ isLoggedIn: Boolean });
 
@@ -49,6 +62,33 @@ const nodeModal = reactive({
   mode: 'add',
   data: {}
 });
+
+const draggingId = ref(null);
+const dragOverId = ref(null);
+
+const onDragStart = (id, event) => {
+  draggingId.value = id;
+  if (event?.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(id));
+  }
+};
+
+const onDragOver = (id) => {
+  if (!draggingId.value || draggingId.value === id) return;
+  dragOverId.value = id;
+};
+
+const onDrop = (id) => {
+  if (!draggingId.value || draggingId.value === id) return;
+  reorderServers(draggingId.value, id);
+  dragOverId.value = null;
+};
+
+const onDragEnd = () => {
+  draggingId.value = null;
+  dragOverId.value = null;
+};
 
 const openNodeModal = (mode, data = {}) => {
   nodeModal.mode = mode;
@@ -144,7 +184,6 @@ onBeforeUnmount(() => {
   const page = document.querySelector('.page-wrapper');
   if (page) page.style.overflowY = 'auto';
 });
-
 </script>
 
 <style scoped>
@@ -155,8 +194,12 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   overflow: visible;
 }
-.page-header h1 { font-size: 5rem; font-weight: 300; color: white; margin-bottom: 40px; }
+.page-header h1 { font-size: 5rem; font-weight: 300; color: white; margin-bottom: 8px; }
+.sort-hint { color: #6f6f6f; margin: 0 0 30px; font-size: 0.85rem; }
 .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 50px; }
+.card-wrapper { transition: transform 0.2s ease, opacity 0.2s ease; }
+.card-wrapper.is-dragging { opacity: 0.35; transform: scale(0.98); }
+.card-wrapper.is-drag-over { outline: 1px dashed rgba(255, 255, 255, 0.45); outline-offset: 8px; border-radius: 24px; }
 .add-card { height: 340px; border: 2px dashed rgba(255, 255, 255, 0.1); border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #444; cursor: pointer; transition: 0.3s; }
 .add-card:hover { border-color: rgba(255, 255, 255, 0.3); color: #888; }
 .empty-state { color: #333; text-align: center; margin-top: 100px; }
