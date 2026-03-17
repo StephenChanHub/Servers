@@ -7,6 +7,7 @@ require('dotenv').config();
 const PORT = Number(process.env.API_PORT || 3001);
 const MAX_CREDENTIAL_LENGTH = 10;
 const MAX_NODE_NAME_LENGTH = 10;
+const DB_QUERY_TIMEOUT_MS = 8000;
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
@@ -37,6 +38,14 @@ const send = (res, status, payload) => {
 
 const hashPassword = (password) => crypto.createHash('sha256').update(password).digest('hex');
 
+const queryWithTimeout = async (sql, params = []) => {
+  return Promise.race([
+    pool.query(sql, params),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`Database query timeout (${DB_QUERY_TIMEOUT_MS}ms)`)), DB_QUERY_TIMEOUT_MS);
+    })
+  ]);
+};
 
 const DEFAULT_DEMO_USER = {
   username: 'stephen',
@@ -45,7 +54,7 @@ const DEFAULT_DEMO_USER = {
 
 const ensureDemoAccount = async () => {
   const demoHash = hashPassword(DEFAULT_DEMO_USER.password);
-  await pool.query(
+  await queryWithTimeout(
     `INSERT INTO accounts (username, password_hash) VALUES (?, ?)
      ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)`,
     [DEFAULT_DEMO_USER.username, demoHash]
@@ -120,7 +129,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (url.pathname === '/backend-api/health' && req.method === 'GET') {
-      const [dbPing] = await pool.query('SELECT 1 as ok');
+      const [dbPing] = await queryWithTimeout('SELECT 1 as ok');
       send(res, 200, { success: true, db: dbPing[0]?.ok === 1 });
       return;
     }
@@ -135,7 +144,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const [rows] = await pool.query('SELECT id, username, password_hash FROM accounts WHERE username = ? LIMIT 1', [cleanUsername]);
+      const [rows] = await queryWithTimeout('SELECT id, username, password_hash FROM accounts WHERE username = ? LIMIT 1', [cleanUsername]);
       if (!rows.length || rows[0].password_hash !== hashPassword(cleanPassword)) {
         send(res, 401, { success: false, message: 'invalid username or password' });
         return;
@@ -158,13 +167,13 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const [existsRows] = await pool.query('SELECT id FROM accounts WHERE username = ? LIMIT 1', [cleanUsername]);
+      const [existsRows] = await queryWithTimeout('SELECT id FROM accounts WHERE username = ? LIMIT 1', [cleanUsername]);
       if (existsRows.length) {
         send(res, 409, { success: false, message: 'username already exists' });
         return;
       }
 
-      const [result] = await pool.query('INSERT INTO accounts (username, password_hash) VALUES (?, ?)', [cleanUsername, hashPassword(cleanPassword)]);
+      const [result] = await queryWithTimeout('INSERT INTO accounts (username, password_hash) VALUES (?, ?)', [cleanUsername, hashPassword(cleanPassword)]);
       send(res, 200, {
         success: true,
         user: { id: result.insertId, username: cleanUsername }
@@ -173,7 +182,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/backend-api/nodes' && req.method === 'GET') {
-      const [rows] = await pool.query('SELECT * FROM nodes ORDER BY id DESC');
+      const [rows] = await queryWithTimeout('SELECT * FROM nodes ORDER BY id DESC');
       send(res, 200, { success: true, data: rows.map(mapNodeRow) });
       return;
     }
@@ -189,7 +198,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const [result] = await pool.query(
+      const [result] = await queryWithTimeout(
         `INSERT INTO nodes (name, ip_address, ports, remark, ssh_password, status, cpu, ram, disk, uptime, port_statuses)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -207,7 +216,7 @@ const server = http.createServer(async (req, res) => {
         ]
       );
 
-      const [rows] = await pool.query('SELECT * FROM nodes WHERE id = ?', [result.insertId]);
+      const [rows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ?', [result.insertId]);
       send(res, 200, { success: true, data: mapNodeRow(rows[0]) });
       return;
     }
@@ -216,7 +225,7 @@ const server = http.createServer(async (req, res) => {
       const id = Number(url.pathname.split('/').pop());
       const body = await parseJsonBody(req);
 
-      const [existingRows] = await pool.query('SELECT * FROM nodes WHERE id = ?', [id]);
+      const [existingRows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ?', [id]);
       if (!existingRows.length) {
         send(res, 404, { success: false, message: 'node not found' });
         return;
@@ -236,7 +245,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      await pool.query(
+      await queryWithTimeout(
         `UPDATE nodes
          SET name = ?, ip_address = ?, ports = ?, remark = ?, ssh_password = ?, status = ?,
              cpu = ?, ram = ?, disk = ?, uptime = ?, port_statuses = ?
@@ -257,33 +266,37 @@ const server = http.createServer(async (req, res) => {
         ]
       );
 
-      const [rows] = await pool.query('SELECT * FROM nodes WHERE id = ?', [id]);
+      const [rows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ?', [id]);
       send(res, 200, { success: true, data: mapNodeRow(rows[0]) });
       return;
     }
 
     if (url.pathname.startsWith('/backend-api/nodes/') && req.method === 'DELETE') {
       const id = Number(url.pathname.split('/').pop());
-      await pool.query('DELETE FROM nodes WHERE id = ?', [id]);
+      await queryWithTimeout('DELETE FROM nodes WHERE id = ?', [id]);
       send(res, 200, { success: true });
       return;
     }
 
     send(res, 404, { success: false, message: 'not found' });
   } catch (error) {
-    send(res, 500, { success: false, message: error.message || 'internal error' });
+    const isDbTimeout = String(error.message || '').includes('Database query timeout');
+    send(res, isDbTimeout ? 503 : 500, { success: false, message: error.message || 'internal error' });
   }
 });
 
+server.requestTimeout = 15000;
+server.headersTimeout = 16000;
+
 const bootstrap = async () => {
+  server.listen(PORT, () => {
+    console.log(`API server running at http://localhost:${PORT}`);
+  });
+
   try {
     await ensureDemoAccount();
-    server.listen(PORT, () => {
-      console.log(`API server running at http://localhost:${PORT}`);
-    });
   } catch (error) {
-    console.error('Failed to bootstrap backend:', error.message);
-    process.exit(1);
+    console.error('Demo account bootstrap warning:', error.message);
   }
 };
 
