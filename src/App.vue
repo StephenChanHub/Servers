@@ -3,7 +3,7 @@
     <div class="top-header">
       <button v-if="!isLoggedIn" class="login-btn" @click="showLogin = true">log in</button>
       <div v-else class="user-info">
-        <span>welcome, stephen</span>
+        <span>welcome, {{ currentUser || 'user' }}</span>
         <button class="logout-link" @click="isLoggedIn = false">logout</button>
       </div>
     </div>
@@ -38,10 +38,12 @@ import LoginModal from './components/LoginModal.vue';
 const route = useRoute();
 const transitionName = ref('slide-down');
 const showLogin = ref(false);
-const isLoggedIn = ref(false); // 全局登录状态
+const isLoggedIn = ref(false);
+const currentUser = ref('');
 
-const handleLoginSuccess = () => {
+const handleLoginSuccess = (user) => {
   isLoggedIn.value = true;
+  currentUser.value = user?.username || 'user';
   showLogin.value = false;
 };
 
@@ -104,7 +106,8 @@ watch(() => route.path, (to) => {
   background: #111; /* 纯黑底色能让羽化和星空效果更纯净 */
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
   position: relative;
 }
 
@@ -120,9 +123,33 @@ watch(() => route.path, (to) => {
   left: 0;
   width: 100%;
   height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   /* 硬件加速，确保模糊动画不卡顿 */
   will-change: transform, opacity, filter;
 }
+
+
+/* Global white scrollbar */
+.page-wrapper::-webkit-scrollbar,
+.servers-page::-webkit-scrollbar,
+.space-canvas::-webkit-scrollbar {
+  width: 8px;
+}
+
+.page-wrapper::-webkit-scrollbar-track,
+.servers-page::-webkit-scrollbar-track,
+.space-canvas::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-wrapper::-webkit-scrollbar-thumb,
+.servers-page::-webkit-scrollbar-thumb,
+.space-canvas::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 20px;
+}
+
 
 /* --- 核心：纵向位移 + 羽化过渡动画 --- */
 
