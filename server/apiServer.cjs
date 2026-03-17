@@ -15,7 +15,8 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'servers_universe',
   waitForConnections: true,
-  connectionLimit: 10
+  connectionLimit: 10,
+  connectTimeout: 10000
 });
 
 const parseJsonBody = async (req) => {
@@ -112,14 +113,16 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === '/backend-api/auth/login' && req.method === 'POST') {
       const { username = '', password = '' } = await parseJsonBody(req);
-      const errorMessage = validateCredentials(username.trim(), password.trim());
+      const cleanUsername = username.trim();
+      const cleanPassword = password.trim();
+      const errorMessage = validateCredentials(cleanUsername, cleanPassword);
       if (errorMessage) {
         send(res, 400, { success: false, message: errorMessage });
         return;
       }
 
-      const [rows] = await pool.query('SELECT id, username, password_hash FROM accounts WHERE username = ? LIMIT 1', [username]);
-      if (!rows.length || rows[0].password_hash !== hashPassword(password)) {
+      const [rows] = await pool.query('SELECT id, username, password_hash FROM accounts WHERE username = ? LIMIT 1', [cleanUsername]);
+      if (!rows.length || rows[0].password_hash !== hashPassword(cleanPassword)) {
         send(res, 401, { success: false, message: 'invalid username or password' });
         return;
       }
