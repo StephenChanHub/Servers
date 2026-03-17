@@ -4,18 +4,29 @@
       <h2 class="login-title">LOGIN</h2>
       <div class="input-group">
         <label>USERNAME</label>
-        <input v-model="form.user" type="text" placeholder="Enter username"
-        @keyup.enter="handleLogin" />
+        <input
+          v-model="form.user"
+          type="text"
+          maxlength="10"
+          placeholder="Enter username"
+          @keyup.enter="handleSignIn"
+        />
       </div>
       <div class="input-group">
         <label>PASSWORD</label>
-        <input v-model="form.password" type="password" placeholder="Enter password"
-        @keyup.enter="handleLogin" />
+        <input
+          v-model="form.password"
+          type="password"
+          maxlength="10"
+          placeholder="Enter password"
+          @keyup.enter="handleSignIn"
+        />
       </div>
-      <div v-if="error" class="error-msg">Username or password error.</div>
+      <div class="helper-msg">Username / Password max length: 10</div>
+      <div v-if="error" class="error-msg">{{ error }}</div>
       <div class="button-group">
-        <button class="btn btn-cancel" @click="$emit('close')">cancel</button>
-        <button class="btn btn-confirm" @click="handleLogin">confirm</button>
+        <button class="btn btn-cancel" :disabled="loading" @click="handleSignIn">{{ loading ? 'loading...' : 'sign in' }}</button>
+        <button class="btn btn-confirm" :disabled="loading" @click="handleSignUp">{{ loading ? 'loading...' : 'sign up' }}</button>
       </div>
     </div>
   </div>
@@ -23,37 +34,76 @@
 
 <script setup>
 import { reactive, ref } from 'vue';
+import { loginApi, signUpApi } from '../services/backendApi';
 
 const emit = defineEmits(['close', 'login-success']);
-const error = ref(false);
+const error = ref('');
+const loading = ref(false);
 
 const form = reactive({
   user: '',
   password: ''
 });
 
-const handleLogin = () => {
-  // 验证唯一账号
-  if (form.user === 'stephen' && form.password === '666666') {
-    error.value = false;
-    emit('login-success');
-  } else {
-    error.value = true;
+const validateInput = () => {
+  const username = form.user.trim();
+  const password = form.password.trim();
+
+  if (!username || !password) {
+    error.value = 'Username and password are required.';
+    return null;
+  }
+
+  if (username.length > 10 || password.length > 10) {
+    error.value = 'Username and password must be <= 10 characters.';
+    return null;
+  }
+
+  return { username, password };
+};
+
+const handleSignIn = async () => {
+  const payload = validateInput();
+  if (!payload) return;
+
+  loading.value = true;
+  error.value = '';
+  try {
+    const result = await loginApi(payload);
+    emit('login-success', result.user);
+  } catch (e) {
+    error.value = e.message || 'Sign in failed.';
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleSignUp = async () => {
+  const payload = validateInput();
+  if (!payload) return;
+
+  loading.value = true;
+  error.value = '';
+  try {
+    const result = await signUpApi(payload);
+    emit('login-success', result.user);
+  } catch (e) {
+    error.value = e.message || 'Sign up failed.';
+  } finally {
+    loading.value = false;
   }
 };
 </script>
 
 <style scoped>
-
 .login-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  /* 背景虚化与遮罩 */
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(25px); 
+  backdrop-filter: blur(25px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -103,6 +153,13 @@ const handleLogin = () => {
   border-color: rgba(255, 255, 255, 0.4);
 }
 
+.helper-msg {
+  color: #888;
+  font-size: 0.68rem;
+  text-align: center;
+  margin: -5px 0 10px;
+}
+
 .error-msg {
   color: #ff4757;
   font-size: 0.75rem;
@@ -126,6 +183,7 @@ const handleLogin = () => {
   transition: 0.3s;
 }
 
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-cancel { background: rgba(255, 255, 255, 0.1); color: white; }
 .btn-confirm { background: white; color: black; }
 .btn:hover { opacity: 0.8; transform: translateY(-2px); }

@@ -3,7 +3,7 @@
     <div class="top-header">
       <button v-if="!isLoggedIn" class="login-btn" @click="showLogin = true">log in</button>
       <div v-else class="user-info">
-        <span>welcome, stephen</span>
+        <span>welcome, {{ currentUser || 'user' }}</span>
         <button class="logout-link" @click="isLoggedIn = false">logout</button>
       </div>
     </div>
@@ -38,10 +38,12 @@ import LoginModal from './components/LoginModal.vue';
 const route = useRoute();
 const transitionName = ref('slide-down');
 const showLogin = ref(false);
-const isLoggedIn = ref(false); // 全局登录状态
+const isLoggedIn = ref(false);
+const currentUser = ref('');
 
-const handleLoginSuccess = () => {
+const handleLoginSuccess = (user) => {
   isLoggedIn.value = true;
+  currentUser.value = user?.username || 'user';
   showLogin.value = false;
 };
 
