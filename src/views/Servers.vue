@@ -4,46 +4,45 @@
       <h1>Servers</h1>
     </header>
 
-    <div class="cards-grid" v-if="isLoggedIn">
-      <ServerCard 
-        v-for="s in serverList" 
-        :key="s.id" 
-        :server="s" 
-        @click="openNodeModal('edit', s)"
-      />
-      
+    <div class="cards-grid" v-if="isLoggedIn && !nodesLoading">
+      <ServerCard v-for="s in serverList" :key="s.id" :server="s" @click="openNodeModal('edit', s)" />
+
       <div class="add-card" @click="openNodeModal('add')">
         <span class="plus-icon">+</span>
         <span>Add Node</span>
       </div>
     </div>
-    
+
+    <div v-else-if="isLoggedIn && nodesLoading" class="empty-state">
+      <p>Loading nodes...</p>
+    </div>
+
     <div v-else class="empty-state">
       <p>Please log in to manage your nodes.</p>
     </div>
 
-    <NodeModal 
+    <NodeModal
       v-if="nodeModal.show"
       :mode="nodeModal.mode"
       :initialData="nodeModal.data"
-      :existingIps="serverList.map(s => s.ip)"
+      :isConnected="nodeModal.data.status === 'online'"
+      :existingIps="serverList.map((s) => s.ip)"
       @close="nodeModal.show = false"
       @submit="handleNodeSubmit"
       @delete="handleNodeDelete"
+      @ssh-success="handleSshSuccess"
+      @refresh-status="handleRefreshStatus"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
-import ServerCard from '../components/ServerCard.vue';
+import { onMounted, reactive, watch } from 'vue';
 import NodeModal from '../components/NodeModal.vue';
+import ServerCard from '../components/ServerCard.vue';
+import { addServer, loadServers, nodesLoading, removeServer, serverList, updateServer } from '../stores/serverUniverse';
 
-defineProps({ isLoggedIn: Boolean });
-
-const serverList = ref([
-  { id: 1, name: 'Mac Mini M4', ip: '192.168.1.102', status: 'online', metrics: { cpu: 24, ram: 62, disk: 45 }, uptime: '12d 4h', activePorts: 8, remark: 'Local Powerhouse' }
-]);
+const props = defineProps({ isLoggedIn: Boolean });
 
 const nodeModal = reactive({
   show: false,
@@ -57,53 +56,94 @@ const openNodeModal = (mode, data = {}) => {
   nodeModal.show = true;
 };
 
-const handleNodeSubmit = (formData) => {
-  if (nodeModal.mode === 'add') {
-    serverList.value.push({
-      ...formData,
-      id: Date.now(),
-      status: 'online',
-      metrics: { cpu: 0, ram: 0, disk: 0 },
-      uptime: '0m',
-      activePorts: formData.ports?.split(',').length || 0
-    });
-  } else {
-    const idx = serverList.value.findIndex(s => s.id === nodeModal.data.id);
-    if (idx !== -1) serverList.value[idx] = { ...serverList.value[idx], ...formData };
-  }
-  nodeModal.show = false;
+const notifyError = (error, fallback) => {
+  const message = error?.message || fallback;
+  console.error(message);
+  window.alert(message);
 };
 
-const handleNodeDelete = () => {
-  serverList.value = serverList.value.filter(s => s.id !== nodeModal.data.id);
-  nodeModal.show = false;
+const handleNodeSubmit = async (formData) => {
+  try {
+    if (nodeModal.mode === 'add') {
+      await addServer(formData);
+    } else {
+      const updated = await updateServer(nodeModal.data.id, {
+        ...formData,
+        portStatuses: formData.portStatuses || nodeModal.data.portStatuses
+      });
+      if (updated) nodeModal.data = updated;
+    }
+    nodeModal.show = false;
+  } catch (error) {
+    notifyError(error, 'Save node failed');
+  }
 };
+
+const handleNodeDelete = async () => {
+  try {
+    await removeServer(nodeModal.data.id);
+    nodeModal.show = false;
+  } catch (error) {
+    notifyError(error, 'Delete node failed');
+  }
+};
+
+const handleSshSuccess = async ({ id, metrics, uptime }) => {
+  if (!id || !metrics) return;
+  try {
+    const updated = await updateServer(id, {
+      status: 'online',
+      metrics: {
+        cpu: metrics.cpu,
+        ram: metrics.ram,
+        disk: metrics.disk
+      },
+      uptime
+    });
+    if (updated) nodeModal.data = updated;
+  } catch (error) {
+    notifyError(error, 'Update metrics failed');
+  }
+};
+
+const handleRefreshStatus = async ({ id, status, portStatuses }) => {
+  if (!id) return;
+  try {
+    const updated = await updateServer(id, {
+      status: status || undefined,
+      portStatuses: portStatuses || undefined
+    });
+    if (updated) nodeModal.data = updated;
+  } catch (error) {
+    notifyError(error, 'Refresh status failed');
+  }
+};
+
+watch(
+  () => props.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) loadServers();
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  if (props.isLoggedIn) loadServers();
+});
 </script>
 
 <style scoped>
 .servers-page {
-  padding: 60px 40px;
-  /* 4. 移除 max-width，使其完全适应全屏宽度 */
+  padding: 60px 40px 120px;
   width: 100%;
+  height: 100%;
   box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-
 .page-header h1 { font-size: 5rem; font-weight: 300; color: white; margin-bottom: 40px; }
-
-.cards-grid {
-  display: grid;
-  /* 4. 使用 auto-fill 根据屏幕宽度自动计算列数 */
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 50px;
-}
-
-.add-card {
-  height: 340px;
-  border: 2px dashed rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  display: flex; flex-direction: column; justify-content: center; align-items: center;
-  color: #444; cursor: pointer; transition: 0.3s;
-}
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 50px; }
+.add-card { height: 340px; border: 2px dashed rgba(255, 255, 255, 0.1); border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #444; cursor: pointer; transition: 0.3s; }
 .add-card:hover { border-color: rgba(255, 255, 255, 0.3); color: #888; }
 .empty-state { color: #333; text-align: center; margin-top: 100px; }
 </style>
