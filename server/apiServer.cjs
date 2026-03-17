@@ -36,6 +36,27 @@ const send = (res, status, payload) => {
 
 const hashPassword = (password) => crypto.createHash('sha256').update(password).digest('hex');
 
+
+const parsePortStatuses = (rawValue) => {
+  try {
+    if (rawValue === null || rawValue === undefined) return [];
+    if (Array.isArray(rawValue)) return rawValue;
+    if (Buffer.isBuffer(rawValue)) {
+      const text = rawValue.toString('utf8');
+      if (!text) return [];
+      return JSON.parse(text);
+    }
+    if (typeof rawValue === 'object') return [];
+    if (typeof rawValue === 'string') {
+      if (!rawValue.trim()) return [];
+      return JSON.parse(rawValue);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+};
+
 const validateCredentials = (username, password) => {
   if (!username || !password) {
     return 'username/password required';
@@ -70,7 +91,7 @@ const mapNodeRow = (row) => ({
     disk: row.disk ?? 0
   },
   uptime: row.uptime || '0m',
-  portStatuses: row.port_statuses ? JSON.parse(row.port_statuses) : [],
+  portStatuses: parsePortStatuses(row.port_statuses),
   activePorts: (row.ports || '').split(',').map((p) => p.trim()).filter(Boolean).length
 });
 
