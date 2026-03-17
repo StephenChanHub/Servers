@@ -3,14 +3,14 @@
     <div class="top-header">
       <button v-if="!isLoggedIn" class="login-btn" @click="showLogin = true">log in</button>
       <div v-else class="user-info">
-        <span>welcome, stephen</span>
-        <button class="logout-link" @click="isLoggedIn = false">logout</button>
+        <span>welcome, {{ currentUser || 'user' }}</span>
+        <button class="logout-link" @click="handleLogout">logout</button>
       </div>
     </div>
 
     <div class="view-container">
       <router-view v-slot="{ Component }">
-        <transition :name="transitionName">
+        <transition :name="transitionName" mode="out-in">
           <component :is="Component" class="page-wrapper" :isLoggedIn="isLoggedIn" />
         </transition>
       </router-view>
@@ -34,15 +34,28 @@
 import { ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import LoginModal from './components/LoginModal.vue';
+import { clearStoredUser, getStoredUser, setStoredUser } from './services/backendApi';
+import { serverList } from './stores/serverUniverse';
 
 const route = useRoute();
 const transitionName = ref('slide-down');
 const showLogin = ref(false);
-const isLoggedIn = ref(false); // 全局登录状态
+const storedUser = getStoredUser();
+const isLoggedIn = ref(Boolean(storedUser?.id));
+const currentUser = ref(storedUser?.username || '');
 
-const handleLoginSuccess = () => {
+const handleLoginSuccess = (user) => {
   isLoggedIn.value = true;
+  currentUser.value = user?.username || 'user';
+  setStoredUser(user);
   showLogin.value = false;
+};
+
+const handleLogout = () => {
+  isLoggedIn.value = false;
+  currentUser.value = '';
+  clearStoredUser();
+  serverList.value = [];
 };
 
 watch(() => route.path, (to) => {
@@ -104,25 +117,51 @@ watch(() => route.path, (to) => {
   background: #111; /* 纯黑底色能让羽化和星空效果更纯净 */
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
   position: relative;
 }
 
 .view-container {
   flex: 1;
   position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-/* 必须让页面绝对定位，否则切换时会出现瞬间的上下堆叠 */
 .page-wrapper {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
   width: 100%;
-  height: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
   /* 硬件加速，确保模糊动画不卡顿 */
   will-change: transform, opacity, filter;
 }
+
+
+/* Global white scrollbar */
+.page-wrapper::-webkit-scrollbar,
+.view-container::-webkit-scrollbar,
+.servers-page::-webkit-scrollbar,
+.space-canvas::-webkit-scrollbar {
+  width: 8px;
+}
+
+.page-wrapper::-webkit-scrollbar-track,
+.view-container::-webkit-scrollbar-track,
+.servers-page::-webkit-scrollbar-track,
+.space-canvas::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-wrapper::-webkit-scrollbar-thumb,
+.view-container::-webkit-scrollbar-thumb,
+.servers-page::-webkit-scrollbar-thumb,
+.space-canvas::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 20px;
+}
+
 
 /* --- 核心：纵向位移 + 羽化过渡动画 --- */
 
