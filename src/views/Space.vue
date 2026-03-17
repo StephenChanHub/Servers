@@ -3,43 +3,32 @@
     <div v-for="star in backgroundStars" :key="star.id" class="bg-star" :style="star.style"></div>
 
     <template v-if="isLoggedIn">
-      <div
-        v-for="galaxy in galaxies"
-        :key="galaxy.id"
-        class="galaxy"
-        :style="{ left: galaxy.x + '%', top: galaxy.y + '%' }"
-        @mousemove="onGalaxyHover($event, galaxy.id)"
-        @mouseleave="onGalaxyLeave(galaxy.id)"
-      >
-        <div class="galaxy-core" :style="coreStyle(galaxy.nodeStatus, galaxy.id)">
-          <div class="star-title node-title">{{ galaxy.title }}</div>
-        </div>
-
-        <svg class="orbit-links" viewBox="0 0 260 260" preserveAspectRatio="none">
-          <line
-            v-for="port in galaxy.ports"
-            :key="`link-${galaxy.id}-${port.port}`"
-            :x1="centerPoint(galaxy.id).x"
-            :y1="centerPoint(galaxy.id).y"
-            :x2="port.x"
-            :y2="port.y"
-            stroke="#ffffff"
-          />
-        </svg>
-
+      <div class="universe-layer" :style="{ minHeight: `${universeHeight}px` }">
         <div
-          v-for="port in galaxy.ports"
-          :key="`port-${galaxy.id}-${port.port}`"
-          class="port-star"
-          :style="{
-            left: `${(port.x / 260) * 100}%`,
-            top: `${(port.y / 260) * 100}%`,
-            backgroundColor: statusColor(port.status),
-            boxShadow: `0 0 10px ${statusColor(port.status)}`
-          }"
-          :title="port.message"
+          v-for="galaxy in galaxies"
+          :key="galaxy.id"
+          class="galaxy"
+          :style="{ left: `${galaxy.xPercent}%`, top: `${galaxy.yPx}px` }"
         >
-          <div class="star-title port-title">{{ port.port }}</div>
+          <div class="galaxy-core" :style="coreStyle(galaxy.nodeStatus)">
+            <div class="star-title node-title">{{ galaxy.title }}</div>
+          </div>
+
+          <div
+            v-for="port in galaxy.ports"
+            :key="`port-${galaxy.id}-${port.port}`"
+            class="orbit-ring"
+            :style="{
+              '--orbit-angle': `${port.angle}deg`,
+              '--orbit-radius': `${port.radius}px`,
+              '--orbit-duration': `${port.duration}s`
+            }"
+            :title="port.message"
+          >
+            <div class="port-star" :style="{ backgroundColor: statusColor(port.status), boxShadow: `0 0 10px ${statusColor(port.status)}` }">
+              <div class="star-title port-title">{{ port.port }}</div>
+            </div>
+          </div>
         </div>
       </div>
     </template>
@@ -49,12 +38,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { serverList } from '../stores/serverUniverse';
 
 defineProps({ isLoggedIn: Boolean });
 
-const hoverStates = reactive({});
 const backgroundStars = ref([]);
 
 const statusColor = (status) => {
@@ -64,22 +52,27 @@ const statusColor = (status) => {
   return '#9ba3ad';
 };
 
-const centerPoint = (galaxyId) => ({
-  x: 130 + (hoverStates[galaxyId]?.x || 0),
-  y: 130 + (hoverStates[galaxyId]?.y || 0)
-});
-
-const coreStyle = (status, galaxyId) => {
+const coreStyle = (status) => {
   const color = statusColor(status);
   return {
     boxShadow: `0 0 20px ${color}, 0 0 60px ${color}55`,
-    background: `radial-gradient(circle, ${color} 0%, #ffffff 35%, #111 100%)`,
-    transform: `translate(${hoverStates[galaxyId]?.x || 0}px, ${hoverStates[galaxyId]?.y || 0}px)`
+    background: `radial-gradient(circle, ${color} 0%, #ffffff 35%, #111 100%)`
   };
 };
 
+const seededRandom = (seed) => {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+};
+
+const universeHeight = computed(() => {
+  const base = 1000;
+  const extra = Math.max(0, serverList.value.length - 3) * 220;
+  return base + extra;
+});
+
 const generateBackgroundStars = () => {
-  const total = 140;
+  const total = 180;
   backgroundStars.value = Array.from({ length: total }, (_, i) => {
     const size = 1 + Math.random() * 2.2;
     return {
@@ -106,38 +99,32 @@ const toPorts = (server) => {
         .map((port) => ({ port, status: 'unknown', message: 'not checked' }));
 
   return fromStatuses.map((item, idx) => {
-    const total = fromStatuses.length;
-    const angle = (Math.PI * 2 * idx) / Math.max(total, 1);
-    const radius = 64 + (idx % 3) * 18;
+    const seed = Number(server.id) * 100 + idx;
     return {
       ...item,
-      x: 130 + Math.cos(angle) * radius,
-      y: 130 + Math.sin(angle) * radius
+      angle: Math.floor(seededRandom(seed + 1) * 360),
+      radius: 56 + Math.floor(seededRandom(seed + 2) * 46),
+      duration: 14 + Math.floor(seededRandom(seed + 3) * 12)
     };
   });
 };
 
 const galaxies = computed(() =>
-  serverList.value.map((server, idx) => ({
-    id: server.id,
-    title: server.name || server.ip,
-    nodeStatus: server.status || 'unknown',
-    x: 18 + (idx % 4) * 24,
-    y: 24 + Math.floor(idx / 4) * 28,
-    ports: toPorts(server)
-  }))
+  serverList.value.map((server, idx) => {
+    const seedBase = Number(server.id) * 77 + idx * 13;
+    const xPercent = 15 + seededRandom(seedBase + 1) * 70;
+    const yPx = 180 + seededRandom(seedBase + 2) * Math.max(universeHeight.value - 260, 300);
+
+    return {
+      id: server.id,
+      title: server.name || server.ip,
+      nodeStatus: server.status || 'unknown',
+      xPercent,
+      yPx,
+      ports: toPorts(server)
+    };
+  })
 );
-
-const onGalaxyHover = (event, galaxyId) => {
-  const rect = event.currentTarget.getBoundingClientRect();
-  const dx = ((event.clientX - rect.left) / rect.width - 0.5) * 10;
-  const dy = ((event.clientY - rect.top) / rect.height - 0.5) * 10;
-  hoverStates[galaxyId] = { x: dx, y: dy };
-};
-
-const onGalaxyLeave = (galaxyId) => {
-  hoverStates[galaxyId] = { x: 0, y: 0 };
-};
 
 onMounted(() => {
   generateBackgroundStars();
@@ -149,8 +136,15 @@ onMounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: radial-gradient(circle at center, #0c111b 0%, #05070c 70%, #020202 100%);
+}
+
+.universe-layer {
+  position: relative;
+  width: 100%;
+  padding-bottom: 120px;
 }
 
 .bg-star {
@@ -169,7 +163,7 @@ onMounted(() => {
 }
 
 .galaxy:hover {
-  transform: translate(-50%, -50%) scale(1.04);
+  transform: translate(-50%, -50%) scale(1.05);
 }
 
 .galaxy-core {
@@ -180,18 +174,21 @@ onMounted(() => {
   height: 26px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  transition: transform 0.35s ease-out, box-shadow 0.35s ease-out;
+  transition: box-shadow 0.35s ease-out;
 }
 
-.orbit-links {
+.orbit-ring {
   position: absolute;
-  inset: 0;
-  pointer-events: none;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--orbit-angle));
+  transform-origin: center;
 }
 
-.orbit-links line {
-  stroke-width: 1.4;
-  opacity: 0.68;
+.galaxy:hover .orbit-ring {
+  animation: orbit-spin var(--orbit-duration) linear infinite;
 }
 
 .port-star {
@@ -199,12 +196,7 @@ onMounted(() => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  transition: transform 0.35s ease-out;
-}
-
-.galaxy:hover .port-star {
-  transform: translate(-50%, -50%) scale(1.18);
+  transform: translateX(var(--orbit-radius));
 }
 
 .star-title {
@@ -234,6 +226,15 @@ onMounted(() => {
   transform: translate(-50%, -50%);
   color: rgba(255, 255, 255, 0.3);
   font-size: 1.1rem;
+}
+
+@keyframes orbit-spin {
+  from {
+    transform: rotate(var(--orbit-angle));
+  }
+  to {
+    transform: rotate(calc(var(--orbit-angle) + 360deg));
+  }
 }
 
 @keyframes twinkle {

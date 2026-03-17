@@ -133,7 +133,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.servers-page { padding: 60px 40px; width: 100%; box-sizing: border-box; }
+.servers-page {
+  padding: 60px 40px 120px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .page-header h1 { font-size: 5rem; font-weight: 300; color: white; margin-bottom: 40px; }
 .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 50px; }
 .add-card { height: 340px; border: 2px dashed rgba(255, 255, 255, 0.1); border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #444; cursor: pointer; transition: 0.3s; }
