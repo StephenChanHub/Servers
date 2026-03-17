@@ -29,8 +29,8 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 -- default account: stephen / 666666 (sha256)
 INSERT INTO accounts (username, password_hash)
-VALUES ('stephen', '8d969eef6ecad3c29a3a629280e686cff8fab7f5f95b2f76bb1e7f56e8e9b7a0')
-ON DUPLICATE KEY UPDATE username = VALUES(username);
+VALUES ('stephen', '94edf28c6d6da38fd35d7ad53e485307f89fbeaf120485c8d17a43f323deee71')
+ON DUPLICATE KEY UPDATE username = VALUES(username), password_hash = VALUES(password_hash);
 
 INSERT INTO nodes (
   name, ip_address, ports, remark, ssh_password, status, cpu, ram, disk, uptime, port_statuses

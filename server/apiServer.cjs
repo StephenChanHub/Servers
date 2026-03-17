@@ -38,6 +38,20 @@ const send = (res, status, payload) => {
 const hashPassword = (password) => crypto.createHash('sha256').update(password).digest('hex');
 
 
+const DEFAULT_DEMO_USER = {
+  username: 'stephen',
+  password: '666666'
+};
+
+const ensureDemoAccount = async () => {
+  const demoHash = hashPassword(DEFAULT_DEMO_USER.password);
+  await pool.query(
+    `INSERT INTO accounts (username, password_hash) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)`,
+    [DEFAULT_DEMO_USER.username, demoHash]
+  );
+};
+
 const parsePortStatuses = (rawValue) => {
   try {
     if (rawValue === null || rawValue === undefined) return [];
@@ -261,6 +275,16 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`API server running at http://localhost:${PORT}`);
-});
+const bootstrap = async () => {
+  try {
+    await ensureDemoAccount();
+    server.listen(PORT, () => {
+      console.log(`API server running at http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to bootstrap backend:', error.message);
+    process.exit(1);
+  }
+};
+
+bootstrap();
