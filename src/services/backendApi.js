@@ -1,13 +1,43 @@
 const REQUEST_TIMEOUT_MS = 10000;
+const AUTH_USER_STORAGE_KEY = 'servers_universe_user';
+
+export const getStoredUser = () => {
+  try {
+    const raw = localStorage.getItem(AUTH_USER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.id) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+export const setStoredUser = (user) => {
+  if (!user?.id) return;
+  localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+};
+
+export const clearStoredUser = () => {
+  localStorage.removeItem(AUTH_USER_STORAGE_KEY);
+};
 
 const request = async (path, options = {}) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+  const user = getStoredUser();
+  const authHeaders = user?.id ? { 'x-account-id': String(user.id) } : {};
+  const mergedHeaders = {
+    'Content-Type': 'application/json',
+    ...authHeaders,
+    ...(options.headers || {})
+  };
+
   try {
     const response = await fetch(`/backend-api${path}`, {
-      headers: { 'Content-Type': 'application/json' },
       ...options,
+      headers: mergedHeaders,
       signal: controller.signal
     });
 

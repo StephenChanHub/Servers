@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
 .servers-page {
   padding: 60px 40px 120px;
   width: 100%;
-  height: 100%;
+  min-height: 100%;
   box-sizing: border-box;
   overflow: visible;
 }

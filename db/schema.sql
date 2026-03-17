@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 CREATE TABLE IF NOT EXISTS nodes (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  account_id BIGINT NOT NULL,
   name VARCHAR(10) NOT NULL,
   ip_address VARCHAR(64) NOT NULL,
   ports VARCHAR(255) DEFAULT '',
@@ -24,7 +25,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   port_statuses JSON NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_ip (ip_address)
+  UNIQUE KEY uniq_account_ip (account_id, ip_address),
+  KEY idx_nodes_account_id (account_id),
+  CONSTRAINT fk_nodes_account FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
 -- default account: stephen / 666666 (sha256)
@@ -33,9 +36,10 @@ VALUES ('stephen', '94edf28c6d6da38fd35d7ad53e485307f89fbeaf120485c8d17a43f323de
 ON DUPLICATE KEY UPDATE username = VALUES(username), password_hash = VALUES(password_hash);
 
 INSERT INTO nodes (
-  name, ip_address, ports, remark, ssh_password, status, cpu, ram, disk, uptime, port_statuses
+  account_id, name, ip_address, ports, remark, ssh_password, status, cpu, ram, disk, uptime, port_statuses
 )
 VALUES (
+  (SELECT id FROM accounts WHERE username = 'stephen' LIMIT 1),
   'Mac Mini M4',
   '192.168.1.102',
   '22,80,5432',
@@ -52,4 +56,4 @@ VALUES (
     JSON_OBJECT('port', '5432', 'status', 'down', 'message', 'connect ECONNREFUSED')
   )
 )
-ON DUPLICATE KEY UPDATE name = VALUES(name);
+ON DUPLICATE KEY UPDATE name = VALUES(name), account_id = VALUES(account_id);

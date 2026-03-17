@@ -135,7 +135,7 @@ onMounted(() => {
 .space-canvas {
   position: relative;
   width: 100%;
-  height: 100%;
+  min-height: 100%;
   overflow: visible;
   background: radial-gradient(circle at center, #0c111b 0%, #05070c 70%, #020202 100%);
 }

@@ -61,6 +61,64 @@ const ensureDemoAccount = async () => {
   );
 };
 
+const ensureNodeOwnershipSchema = async () => {
+  const [columns] = await queryWithTimeout(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nodes' AND COLUMN_NAME = 'account_id'`
+  );
+
+  if (!columns.length) {
+    await queryWithTimeout('ALTER TABLE nodes ADD COLUMN account_id BIGINT NULL AFTER id');
+  }
+
+  await queryWithTimeout(
+    `UPDATE nodes n
+     LEFT JOIN accounts a ON a.username = ?
+     SET n.account_id = a.id
+     WHERE n.account_id IS NULL`,
+    [DEFAULT_DEMO_USER.username]
+  );
+
+  await queryWithTimeout('ALTER TABLE nodes MODIFY COLUMN account_id BIGINT NOT NULL');
+
+  const [accountIdIndexRows] = await queryWithTimeout(
+    `SELECT INDEX_NAME
+     FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nodes' AND INDEX_NAME = 'idx_nodes_account_id'`
+  );
+  if (!accountIdIndexRows.length) {
+    await queryWithTimeout('CREATE INDEX idx_nodes_account_id ON nodes(account_id)');
+  }
+
+  const [legacyIpIndexRows] = await queryWithTimeout(
+    `SELECT INDEX_NAME
+     FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nodes' AND INDEX_NAME = 'uniq_ip'`
+  );
+  if (legacyIpIndexRows.length) {
+    await queryWithTimeout('ALTER TABLE nodes DROP INDEX uniq_ip');
+  }
+
+  const [accountIpIndexRows] = await queryWithTimeout(
+    `SELECT INDEX_NAME
+     FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nodes' AND INDEX_NAME = 'uniq_account_ip'`
+  );
+  if (!accountIpIndexRows.length) {
+    await queryWithTimeout('CREATE UNIQUE INDEX uniq_account_ip ON nodes(account_id, ip_address)');
+  }
+
+  const [fkRows] = await queryWithTimeout(
+    `SELECT CONSTRAINT_NAME
+     FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nodes' AND CONSTRAINT_NAME = 'fk_nodes_account'`
+  );
+  if (!fkRows.length) {
+    await queryWithTimeout('ALTER TABLE nodes ADD CONSTRAINT fk_nodes_account FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE');
+  }
+};
+
 const parsePortStatuses = (rawValue) => {
   try {
     if (rawValue === null || rawValue === undefined) return [];
@@ -118,6 +176,13 @@ const mapNodeRow = (row) => ({
   portStatuses: parsePortStatuses(row.port_statuses),
   activePorts: (row.ports || '').split(',').map((p) => p.trim()).filter(Boolean).length
 });
+
+const getAccountIdFromRequest = (req) => {
+  const rawAccountId = req.headers['x-account-id'];
+  const parsed = Number(rawAccountId);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+};
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
@@ -182,12 +247,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/backend-api/nodes' && req.method === 'GET') {
-      const [rows] = await queryWithTimeout('SELECT * FROM nodes ORDER BY id DESC');
+      const accountId = getAccountIdFromRequest(req);
+      if (!accountId) {
+        send(res, 401, { success: false, message: 'auth required' });
+        return;
+      }
+
+      const [rows] = await queryWithTimeout('SELECT * FROM nodes WHERE account_id = ? ORDER BY id DESC', [accountId]);
       send(res, 200, { success: true, data: rows.map(mapNodeRow) });
       return;
     }
 
     if (url.pathname === '/backend-api/nodes' && req.method === 'POST') {
+      const accountId = getAccountIdFromRequest(req);
+      if (!accountId) {
+        send(res, 401, { success: false, message: 'auth required' });
+        return;
+      }
+
       const body = await parseJsonBody(req);
       const { name, ip, ports, remark, sshPassword, status = 'online', metrics = {}, uptime = '0m', portStatuses = [] } = body;
       const normalizedName = (name || '').trim() || String(ip || '').trim();
@@ -199,9 +276,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       const [result] = await queryWithTimeout(
-        `INSERT INTO nodes (name, ip_address, ports, remark, ssh_password, status, cpu, ram, disk, uptime, port_statuses)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO nodes (account_id, name, ip_address, ports, remark, ssh_password, status, cpu, ram, disk, uptime, port_statuses)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          accountId,
           normalizedName,
           ip,
           ports || '',
@@ -216,16 +294,22 @@ const server = http.createServer(async (req, res) => {
         ]
       );
 
-      const [rows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ?', [result.insertId]);
+      const [rows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ? AND account_id = ?', [result.insertId, accountId]);
       send(res, 200, { success: true, data: mapNodeRow(rows[0]) });
       return;
     }
 
     if (url.pathname.startsWith('/backend-api/nodes/') && req.method === 'PUT') {
+      const accountId = getAccountIdFromRequest(req);
+      if (!accountId) {
+        send(res, 401, { success: false, message: 'auth required' });
+        return;
+      }
+
       const id = Number(url.pathname.split('/').pop());
       const body = await parseJsonBody(req);
 
-      const [existingRows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ?', [id]);
+      const [existingRows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ? AND account_id = ?', [id, accountId]);
       if (!existingRows.length) {
         send(res, 404, { success: false, message: 'node not found' });
         return;
@@ -249,7 +333,7 @@ const server = http.createServer(async (req, res) => {
         `UPDATE nodes
          SET name = ?, ip_address = ?, ports = ?, remark = ?, ssh_password = ?, status = ?,
              cpu = ?, ram = ?, disk = ?, uptime = ?, port_statuses = ?
-         WHERE id = ?`,
+         WHERE id = ? AND account_id = ?`,
         [
           merged.name,
           merged.ip,
@@ -262,18 +346,25 @@ const server = http.createServer(async (req, res) => {
           Number(merged.metrics.disk || 0),
           merged.uptime || '0m',
           JSON.stringify(merged.portStatuses || []),
-          id
+          id,
+          accountId
         ]
       );
 
-      const [rows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ?', [id]);
+      const [rows] = await queryWithTimeout('SELECT * FROM nodes WHERE id = ? AND account_id = ?', [id, accountId]);
       send(res, 200, { success: true, data: mapNodeRow(rows[0]) });
       return;
     }
 
     if (url.pathname.startsWith('/backend-api/nodes/') && req.method === 'DELETE') {
+      const accountId = getAccountIdFromRequest(req);
+      if (!accountId) {
+        send(res, 401, { success: false, message: 'auth required' });
+        return;
+      }
+
       const id = Number(url.pathname.split('/').pop());
-      await queryWithTimeout('DELETE FROM nodes WHERE id = ?', [id]);
+      await queryWithTimeout('DELETE FROM nodes WHERE id = ? AND account_id = ?', [id, accountId]);
       send(res, 200, { success: true });
       return;
     }
@@ -295,6 +386,7 @@ const bootstrap = async () => {
 
   try {
     await ensureDemoAccount();
+    await ensureNodeOwnershipSchema();
   } catch (error) {
     console.error('Demo account bootstrap warning:', error.message);
   }
