@@ -2,7 +2,7 @@
 
 # Server Monitor (Servers) v1.0
 
-一个基于 **Vue 3** 和 **Node.js** 构建的可视化服务器监控管理系统。该项目专为开发者和运维爱好者设计，旨在提供从基础网络探测自己的服务器或者某个网站SSH 指标采集的完整监控链路。
+一个基于 **Vue 3** 和 **Node.js** 构建的可视化服务器监控管理系统。该项目旨在提供从基础网络SSH探测自己的服务器或者获取某个网站状态指标采集的完整监控链路。
 <img width="3840" height="2118" alt="Screenshot 2026-03-20 at 01 47 04" src="https://github.com/user-attachments/assets/a2cf9b28-3d51-4c2d-98a1-171c406455ca" />
 <img width="3840" height="2118" alt="Screenshot 2026-03-20 at 01 46 34" src="https://github.com/user-attachments/assets/40a40601-580c-4f53-b241-68a16e91b30e" />
 
