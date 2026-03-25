@@ -1,5 +1,6 @@
 const REQUEST_TIMEOUT_MS = 10000;
 const AUTH_USER_STORAGE_KEY = 'servers_universe_user';
+const AUTH_TOKEN_STORAGE_KEY = 'servers_universe_token';
 
 export const getStoredUser = () => {
   try {
@@ -13,21 +14,24 @@ export const getStoredUser = () => {
   }
 };
 
-export const setStoredUser = (user) => {
-  if (!user?.id) return;
-  localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+export const getStoredToken = () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || '';
+
+export const setStoredSession = ({ user, token }) => {
+  if (user?.id) localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+  if (token) localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
 };
 
 export const clearStoredUser = () => {
   localStorage.removeItem(AUTH_USER_STORAGE_KEY);
+  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
 };
 
 const request = async (path, options = {}) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  const user = getStoredUser();
-  const authHeaders = user?.id ? { 'x-account-id': String(user.id) } : {};
+  const token = getStoredToken();
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
   const mergedHeaders = {
     'Content-Type': 'application/json',
     ...authHeaders,
@@ -75,7 +79,18 @@ export const signUpApi = ({ username, password }) =>
     body: JSON.stringify({ username, password })
   });
 
+export const logoutApi = () =>
+  request('/auth/logout', {
+    method: 'POST'
+  });
+
 export const fetchNodesApi = () => request('/nodes');
+
+export const reorderNodesApi = (ids) =>
+  request('/nodes/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ ids })
+  });
 
 export const createNodeApi = (node) =>
   request('/nodes', {

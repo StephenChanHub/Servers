@@ -79,9 +79,14 @@ const onDragOver = (id) => {
   dragOverId.value = id;
 };
 
-const onDrop = (id) => {
+const onDrop = async (id) => {
   if (!draggingId.value || draggingId.value === id) return;
-  reorderServers(draggingId.value, id);
+  try {
+    await reorderServers(draggingId.value, id);
+  } catch (error) {
+    notifyError(error, 'Reorder failed');
+    await loadServers();
+  }
   dragOverId.value = null;
 };
 

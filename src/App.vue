@@ -34,7 +34,7 @@
 import { ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import LoginModal from './components/LoginModal.vue';
-import { clearStoredUser, getStoredUser, setStoredUser } from './services/backendApi';
+import { clearStoredUser, getStoredUser, logoutApi, setStoredSession } from './services/backendApi';
 import { serverList } from './stores/serverUniverse';
 
 const route = useRoute();
@@ -47,11 +47,16 @@ const currentUser = ref(storedUser?.username || '');
 const handleLoginSuccess = (user) => {
   isLoggedIn.value = true;
   currentUser.value = user?.username || 'user';
-  setStoredUser(user);
+  setStoredSession({ user: { id: user?.id, username: user?.username }, token: user?.token || '' });
   showLogin.value = false;
 };
 
-const handleLogout = () => {
+const handleLogout = async () => {
+  try {
+    await logoutApi();
+  } catch {
+    // ignore local-only logout errors
+  }
   isLoggedIn.value = false;
   currentUser.value = '';
   clearStoredUser();

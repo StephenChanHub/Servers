@@ -70,7 +70,7 @@ const handleSignIn = async () => {
   error.value = '';
   try {
     const result = await loginApi(payload);
-    emit('login-success', result.user);
+    emit('login-success', { ...result.user, token: result.token });
   } catch (e) {
     error.value = e.message || 'Sign in failed.';
   } finally {
@@ -86,7 +86,7 @@ const handleSignUp = async () => {
   error.value = '';
   try {
     const result = await signUpApi(payload);
-    emit('login-success', result.user);
+    emit('login-success', { ...result.user, token: result.token });
   } catch (e) {
     error.value = e.message || 'Sign up failed.';
   } finally {

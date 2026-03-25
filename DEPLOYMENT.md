@@ -7,8 +7,8 @@ mysql -u root -p < db/schema.sql
 ```
 
 Tables:
-- `accounts`: `id`, `username`, `password_hash`, timestamps.
-- `nodes`: `name`, `ip_address`, `ports`, `remark`, `ssh_password`, runtime status/metrics, `port_statuses` JSON.
+- `accounts`: user account basics.
+- `nodes`: owned nodes (`account_id`), `target_input`(raw domain/ip), `ip_address`(resolved ip), `sort_order`, runtime metrics, port checks.
 
 ## 2) Environment
 
@@ -41,35 +41,33 @@ Frontend service: `http://localhost:3000`
 
 Vite proxies `/backend-api/*` to backend API.
 
-## API Design (optimized)
+## API
 
+### Auth
 - `POST /backend-api/auth/login`
 - `POST /backend-api/auth/signup`
+- `POST /backend-api/auth/logout`
+
+### Nodes
 - `GET /backend-api/nodes`
 - `POST /backend-api/nodes`
 - `PUT /backend-api/nodes/:id`
 - `DELETE /backend-api/nodes/:id`
+- `POST /backend-api/nodes/reorder` (persist server-side order)
+
+### Network diagnostics
+- `POST /backend-api/network/validate`
+- `POST /backend-api/network/ssh-connect`
+
+### Health
 - `GET /backend-api/health`
 
-## Optimization suggestions
+## Notes for this local monitoring tool
 
-1. **Security**
-   - Replace SHA-256 with `bcrypt` for account passwords.
-   - Encrypt `nodes.ssh_password` at rest (KMS/Envelope encryption).
-   - Add JWT + role checks to every node API.
-
-2. **Data model**
-   - Split `ports` into child table `node_ports` for queryability.
-   - Add `owner_user_id` to `nodes` for multi-account isolation.
-
-3. **Reliability**
-   - Move diagnostics to async jobs with retry + last_check_at fields.
-   - Add indexes on `nodes(status, updated_at)` and `nodes(ip_address)`.
-
-4. **Observability**
-   - Structured logs with request-id.
-   - Add `/metrics` endpoint and basic health checks.
-
+- Password hashing remains SHA-256 for lightweight local deployment.
+- Session token auth is added to avoid direct account-id spoofing.
+- SSH password is still stored for convenience, but API responses no longer return it.
+- Domain input is preserved (`target_input`) while resolved IP is stored in `ip_address`.
 
 ## Input constraints
 

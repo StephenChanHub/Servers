@@ -153,7 +153,7 @@ const livePortStatuses = ref([]);
 
 const form = reactive({
   name: props.initialData?.name || '',
-  ip: props.initialData?.ip || '',
+  ip: props.initialData?.targetInput || props.initialData?.ip || '',
   ports: props.initialData?.ports || '',
   remark: props.initialData?.remark || ''
 });
@@ -229,7 +229,6 @@ const refreshNodeStatus = async () => {
   try {
     const result = await validateNodeConnection({ target: normalizedTarget(), ports: portList.value });
     const portStatuses = applyConnectivityResult(result);
-    if (result.resolvedIp) form.ip = result.resolvedIp;
 
     if (props.initialData?.id) {
       emit('refresh-status', {
@@ -322,7 +321,6 @@ const validateAndSubmit = async () => {
   try {
     const result = await validateNodeConnection({ target: normalizedTarget(), ports: portList.value });
     const portStatuses = applyConnectivityResult(result);
-    if (result.resolvedIp) form.ip = result.resolvedIp;
 
     const isDuplicateResolvedIp = props.existingIps.includes(result.resolvedIp) && result.resolvedIp !== props.initialData?.ip;
     if (isDuplicateResolvedIp) {
@@ -336,6 +334,7 @@ const validateAndSubmit = async () => {
     emit('submit', {
       ...form,
       ip: result.resolvedIp || form.ip,
+      targetInput: rawTarget,
       status: deriveNodeStatus(result),
       portStatuses
     });

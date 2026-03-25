@@ -1,5 +1,5 @@
 export const validateNodeConnection = async ({ target, ports }) => {
-  const response = await fetch('/api/network/validate', {
+  const response = await fetch('/backend-api/network/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ target, ports })
@@ -14,7 +14,7 @@ export const validateNodeConnection = async ({ target, ports }) => {
 };
 
 export const connectViaSsh = async ({ target, password }) => {
-  const response = await fetch('/api/network/ssh-connect', {
+  const response = await fetch('/backend-api/network/ssh-connect', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ target, password })
