@@ -283,8 +283,11 @@ const exitSSHView = () => {
 };
 
 const handleCancelAction = () => {
-  if (props.mode === 'add') emit('close');
-  else isEditing.value = false;
+  if (props.mode === 'add') {
+    emit('close');
+  } else {
+    isEditing.value = false;
+  }
 };
 
 const handleOverlayClick = () => {
